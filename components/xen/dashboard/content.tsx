@@ -525,10 +525,12 @@ function ChatRow({ project, index }: { project: any; index: number }) {
           </Link>
         </div>
 
-        <div className="overflow-hidden max-w-2xl">
-          {filteredTasks.slice(0, 5).map((project, index) => (
-            <ChatRow key={project.id} project={project} index={index} />
-          ))}
+        <div className="flex justify-center">
+          <div className="w-full max-w-4xl">
+            {filteredTasks.slice(0, 5).map((project, index) => (
+              <ChatRow key={project.id} project={project} index={index} />
+            ))}
+          </div>
         </div>
       </div>
 

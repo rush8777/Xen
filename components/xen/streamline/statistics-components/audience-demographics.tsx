@@ -38,8 +38,13 @@ const renderCustomLabel = (entry: any) => `${entry.value}%`
 // ========================================
 // 1. AGE DISTRIBUTION COMPONENT
 // ========================================
+interface AgeDistributionPoint {
+  label: string
+  value: number
+}
+
 interface AgeDistributionProps {
-  data?: Array<{ label: string; value: number }>
+  data?: AgeDistributionPoint[]
 }
 
 export function AgeDistribution({ 
@@ -51,6 +56,19 @@ export function AgeDistribution({
     { label: "45+", value: 6 },
   ]
 }: AgeDistributionProps) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
+        <div className="mb-2">
+          <h3 className="text-lg font-semibold text-white mb-1">Age Distribution</h3>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Not enough audience data yet to estimate age distribution for this video.
+        </p>
+      </div>
+    )
+  }
+
   const primaryAge = data.reduce((max, group) => 
     group.value > max.value ? group : max
   )
@@ -116,8 +134,13 @@ export function AgeDistribution({
 // ========================================
 // 2. GENDER DISTRIBUTION COMPONENT
 // ========================================
+interface GenderDistributionPoint {
+  label: string
+  value: number
+}
+
 interface GenderDistributionProps {
-  data?: Array<{ label: string; value: number }>
+  data?: GenderDistributionPoint[]
 }
 
 const GENDER_COLORS: Record<string, string> = {
@@ -133,6 +156,19 @@ export function GenderDistribution({
     { label: "Other / Unknown", value: 4 },
   ]
 }: GenderDistributionProps) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
+        <div className="mb-2">
+          <h3 className="text-lg font-semibold text-white mb-1">Gender Distribution</h3>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Not enough audience data yet to show gender distribution.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
       <div className="mb-6">
@@ -196,8 +232,13 @@ export function GenderDistribution({
 // ========================================
 // 3. TOP LOCATIONS COMPONENT
 // ========================================
+interface TopLocationPoint {
+  label: string
+  value: number
+}
+
 interface TopLocationsProps {
-  data?: Array<{ label: string; value: number }>
+  data?: TopLocationPoint[]
 }
 
 export function TopLocations({ 
@@ -211,6 +252,22 @@ export function TopLocations({
     { label: "Others", value: 18 },
   ]
 }: TopLocationsProps) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
+        <div className="mb-2">
+          <div className="flex items-center gap-2 mb-1">
+            <MapPin className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-lg font-semibold text-white">Top Locations</h3>
+          </div>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Not enough geographic data yet to rank top locations for this audience.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
       <div className="mb-6">
@@ -291,6 +348,22 @@ export function AudienceInterests({
     "SaaS",
   ]
 }: AudienceInterestsProps) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
+        <div className="mb-2">
+          <div className="flex items-center gap-2 mb-1">
+            <Tag className="w-4 h-4 text-pink-400" />
+            <h3 className="text-lg font-semibold text-white">Audience Interests</h3>
+          </div>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Not enough engagement signal yet to infer audience interests for this project.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
       <div className="mb-6">

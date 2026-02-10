@@ -1,55 +1,18 @@
 import { ThumbsUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const topComments = [
-  {
-    id: "1",
-    author: "Tech Enthusiast",
-    avatar: "TE",
-    content:
-      "The production quality of this video is absolutely insane! The cinematography and editing are top-tier.",
-    likes: 2847,
-    intent: "positive" as const,
-  },
-  {
-    id: "2",
-    author: "Critical Viewer",
-    avatar: "CV",
-    content:
-      "Great video, but the pacing felt a bit slow in the middle section. Still enjoyed it overall.",
-    likes: 1234,
-    intent: "criticism" as const,
-  },
-  {
-    id: "3",
-    author: "Question Asker",
-    avatar: "QA",
-    content:
-      "How much did this project cost to produce? Would love to know the budget breakdown.",
-    likes: 891,
-    intent: "question" as const,
-  },
-  {
-    id: "4",
-    author: "Supporter",
-    avatar: "SU",
-    content:
-      "This is why you're the best YouTube channel out there. Keep up the amazing work!",
-    likes: 3102,
-    intent: "positive" as const,
-  },
-  {
-    id: "5",
-    author: "Skeptic",
-    avatar: "SK",
-    content:
-      "Some of the claims seem exaggerated. Do you have sources for these statistics?",
-    likes: 756,
-    intent: "criticism" as const,
-  },
-]
+export type TopCommentIntent = "positive" | "criticism" | "question"
 
-export default function TopComments() {
+export interface TopComment {
+  id: string
+  author: string
+  avatar: string
+  content: string
+  likes: number
+  intent: TopCommentIntent
+}
+
+export default function TopComments({ comments = [] }: { comments?: TopComment[] }) {
   return (
     <div
       className={cn(
@@ -66,7 +29,7 @@ export default function TopComments() {
         </p>
       </div>
       <div className="space-y-3">
-        {topComments.map((comment) => (
+        {comments.map((comment) => (
           <div
             key={comment.id}
             className={cn(

@@ -38,7 +38,7 @@ export default function VideoAnalytics() {
         <EmotionRadarChart />
       </div>
 
-      <EmotionalIntensityChart data={emotionalData} />
+      <EmotionalIntensityChart data={[]} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AgeDistribution />

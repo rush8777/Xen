@@ -13,30 +13,19 @@ import {
 } from "recharts"
 import { TrendingUp, TrendingDown } from "lucide-react"
 
-// Sample data - replace with your actual data
-const emotionalData = [
-  { time: "00:00", intensity: 45, emotion: "neutral" },
-  { time: "00:05", intensity: 32, emotion: "neutral" },
-  { time: "00:10", intensity: 68, emotion: "surprise" },
-  { time: "00:15", intensity: 91, emotion: "excitement" },
-  { time: "00:20", intensity: 40, emotion: "calm" },
-  { time: "00:25", intensity: 55, emotion: "interest" },
-  { time: "00:30", intensity: 78, emotion: "joy" },
-  { time: "00:35", intensity: 23, emotion: "sadness" },
-  { time: "00:40", intensity: 62, emotion: "surprise" },
-  { time: "00:45", intensity: 85, emotion: "excitement" },
-  { time: "00:50", intensity: 48, emotion: "neutral" },
-  { time: "00:55", intensity: 70, emotion: "interest" },
-  { time: "01:00", intensity: 38, emotion: "calm" },
-]
+export interface EmotionalIntensityPoint {
+  time: string
+  intensity: number
+  emotion: string
+}
 
 // Find peaks (highest intensity points)
-const findPeaks = (data: typeof emotionalData, threshold = 75) => {
+const findPeaks = (data: EmotionalIntensityPoint[], threshold = 75) => {
   return data.filter((point) => point.intensity >= threshold)
 }
 
 // Find drops (lowest intensity points)
-const findDrops = (data: typeof emotionalData, threshold = 35) => {
+const findDrops = (data: EmotionalIntensityPoint[], threshold = 35) => {
   return data.filter((point) => point.intensity <= threshold)
 }
 
@@ -62,12 +51,32 @@ const CustomTooltip = ({ active, payload }: any) => {
 }
 
 interface EmotionalIntensityChartProps {
-  data?: typeof emotionalData
+  data?: EmotionalIntensityPoint[]
 }
 
 export default function EmotionalIntensityChart({ 
-  data = emotionalData
+  data
 }: EmotionalIntensityChartProps) {
+  const hasData = Array.isArray(data) && data.length > 0
+
+  if (!hasData) {
+    return (
+      <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
+        <div className="mb-2">
+          <h3 className="text-lg font-semibold mb-1 text-white">
+            Emotional Intensity Timeline
+          </h3>
+        </div>
+        <p className="text-sm text-zinc-400">
+          Not enough transcript or comment signal yet to build an emotional intensity timeline for this video.
+        </p>
+        <p className="mt-4 text-xs text-zinc-500">
+          Once statistics are generated, you&apos;ll see peaks and drops in audience emotion across the video.
+        </p>
+      </div>
+    )
+  }
+
   const peaks = findPeaks(data)
   const drops = findDrops(data)
 

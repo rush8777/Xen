@@ -17,6 +17,66 @@ class ProjectStatisticsGenerator:
         self.client = genai.Client(api_key=api_key)
         self.model = "gemini-2.5-flash"
 
+    def _read_analysis_content(self, analysis_file_path: str) -> str:
+        analysis_path = Path(analysis_file_path)
+        if not analysis_path.exists():
+            raise FileNotFoundError(f"Analysis file not found: {analysis_file_path}")
+
+        analysis_content = analysis_path.read_text(encoding="utf-8")
+        if len(analysis_content) > 50000:
+            logger.warning("Analysis content truncated for Gemini processing")
+            analysis_content = analysis_content[:50000] + "\n\n[Content truncated...]"
+        return analysis_content
+
+    def _generate_content(self, prompt: str) -> str:
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+                response_mime_type="application/json",
+            ),
+        )
+
+        response_text = (response.text or "").strip()
+        if not response_text:
+            raise ValueError("Empty response from Gemini")
+        return response_text
+
+    def _sanitize_response_text(self, response_text: str) -> str:
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            response_text = "\n".join(
+                lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+            ).strip()
+        return response_text
+
+    def _parse_stats_json(self, response_text: str) -> dict[str, Any]:
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse Gemini response as JSON: %s", e)
+            logger.error("Response text (first 500 chars): %s", response_text[:500])
+            raise ValueError(f"Invalid JSON response from Gemini: {str(e)}")
+
+    def _enrich_stats(
+        self,
+        stats_data: dict[str, Any],
+        *,
+        analysis_file_path: str,
+        video_url: str,
+        project_id: int,
+        job_id: str | None,
+    ) -> dict[str, Any]:
+        stats_data["project_id"] = project_id
+        stats_data["generated_at"] = datetime.utcnow().isoformat()
+        stats_data["source"] = {
+            "analysis_file_path": str(analysis_file_path),
+            "video_url": video_url,
+            "job_id": job_id,
+        }
+        return stats_data
+
     def _create_prompt(self, analysis_content: str, video_url: str, project_name: str) -> str:
         return f"""You are a video analytics expert. Analyze the following video analysis data and generate structured statistics in JSON format.
 
@@ -102,50 +162,18 @@ RULES:
     ) -> dict[str, Any]:
         logger.info("Generating statistics for project %s", project_id)
 
-        analysis_path = Path(analysis_file_path)
-        if not analysis_path.exists():
-            raise FileNotFoundError(f"Analysis file not found: {analysis_file_path}")
-
-        analysis_content = analysis_path.read_text(encoding="utf-8")
-        if len(analysis_content) > 50000:
-            logger.warning("Analysis content truncated for Gemini processing")
-            analysis_content = analysis_content[:50000] + "\n\n[Content truncated...]"
-
+        analysis_content = self._read_analysis_content(analysis_file_path)
         prompt = self._create_prompt(analysis_content, video_url, project_name)
-
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type="application/json",
-            ),
+        response_text = self._generate_content(prompt)
+        response_text = self._sanitize_response_text(response_text)
+        stats_data = self._parse_stats_json(response_text)
+        return self._enrich_stats(
+            stats_data,
+            analysis_file_path=analysis_file_path,
+            video_url=video_url,
+            project_id=project_id,
+            job_id=job_id,
         )
-
-        response_text = (response.text or "").strip()
-        if not response_text:
-            raise ValueError("Empty response from Gemini")
-
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:]).strip()
-
-        try:
-            stats_data = json.loads(response_text)
-        except json.JSONDecodeError as e:
-            logger.error("Failed to parse Gemini response as JSON: %s", e)
-            logger.error("Response text (first 500 chars): %s", response_text[:500])
-            raise ValueError(f"Invalid JSON response from Gemini: {str(e)}")
-
-        stats_data["project_id"] = project_id
-        stats_data["generated_at"] = datetime.utcnow().isoformat()
-        stats_data["source"] = {
-            "analysis_file_path": str(analysis_file_path),
-            "video_url": video_url,
-            "job_id": job_id,
-        }
-
-        return stats_data
 
     def validate_statistics(self, stats: dict[str, Any]) -> bool:
         required_keys = [
