@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+
+
+from fastapi import FastAPI
+
+from fastapi.middleware.cors import CORSMiddleware
+
+
+
+from .config import settings
+
+from .database import Base, engine
+
+from .models import *  # Import all models to register them with SQLAlchemy
+
+from .routers import oauth, connections, videos, analysis, projects, chats
+from .routers import project_statistics
+
+from .refresh_youtube_token import refresh_youtube_token
+
+
+
+
+
+def create_app() -> FastAPI:
+
+    Base.metadata.create_all(bind=engine)
+
+    # Refresh YouTube OAuth token on startup
+    try:
+        refresh_youtube_token()
+    except Exception as e:
+        # Don't fail startup if token refresh fails
+        print(f"Warning: Failed to refresh YouTube token on startup: {e}")
+
+    app = FastAPI(title="v0-social Backend", version="0.1.0")
+
+
+
+    origins = [
+
+        settings.FRONTEND_BASE_URL,
+
+        "http://localhost:3000",
+
+        "http://127.0.0.1:3000",
+
+    ]
+
+
+
+    app.add_middleware(
+
+        CORSMiddleware,
+
+        allow_origins=origins,
+
+        allow_credentials=True,
+
+        allow_methods=["*"],
+
+        allow_headers=["*"],
+
+    )
+
+
+
+    app.include_router(oauth.router)
+
+    app.include_router(connections.router)
+
+    app.include_router(videos.router)
+
+    app.include_router(analysis.router)
+
+    app.include_router(projects.router)
+
+    app.include_router(project_statistics.router)
+
+    app.include_router(chats.router)
+
+
+
+    return app
+
+
+
+
+
+app = create_app()
+
+
+
+
+

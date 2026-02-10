@@ -1,0 +1,70 @@
+2026-02-06 12:01:22,953 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 24, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:01:22,987 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:01:22,993 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 24, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:01:22,998 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:01:23,008 - videos - INFO - 🔄 VIDEO REFRESH REQUEST - Platform: all
+2026-02-06 12:01:23,010 - videos - INFO - 🔍 PROCESSING PLATFORM - youtube
+2026-02-06 12:01:23,012 - videos - WARNING - ❌ NO YOUTUBE CONNECTION - Using sample data
+2026-02-06 12:01:23,017 - videos - INFO - 📝 CREATED 3 SAMPLE VIDEO DTOs for platform: youtube
+2026-02-06 12:01:23,019 - videos - WARNING - 🎭 FALLBACK - Added 3 mock YouTube videos
+2026-02-06 12:01:23,032 - videos - INFO - 💾 DATABASE UPDATE - 0 videos upserted to database
+2026-02-06 12:01:23,036 - videos - INFO - 📊 REFRESH SUMMARY - Total: 3, Real: 0, Mock: 3
+2026-02-06 12:01:23,036 - videos - WARNING - ⚠️  MOCK DATA ONLY - Only sample videos were added (no YouTube connection)
+2026-02-06 12:01:23,041 - videos - INFO - 🔄 VIDEO REFRESH REQUEST - Platform: all
+2026-02-06 12:01:23,042 - videos - INFO - 🔍 PROCESSING PLATFORM - youtube
+2026-02-06 12:01:23,044 - videos - WARNING - ❌ NO YOUTUBE CONNECTION - Using sample data
+2026-02-06 12:01:23,044 - videos - INFO - 📝 CREATED 3 SAMPLE VIDEO DTOs for platform: youtube
+2026-02-06 12:01:23,045 - videos - WARNING - 🎭 FALLBACK - Added 3 mock YouTube videos
+2026-02-06 12:01:23,052 - videos - INFO - 💾 DATABASE UPDATE - 0 videos upserted to database
+2026-02-06 12:01:23,052 - videos - INFO - 📊 REFRESH SUMMARY - Total: 3, Real: 0, Mock: 3
+2026-02-06 12:01:23,052 - videos - WARNING - ⚠️  MOCK DATA ONLY - Only sample videos were added (no YouTube connection)
+2026-02-06 12:01:23,058 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 24, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:01:23,068 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:01:23,071 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 24, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:01:23,082 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:05:14,119 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 24, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:05:14,123 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:05:14,129 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 24, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:05:14,131 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:05:14,138 - videos - INFO - 🔄 VIDEO REFRESH REQUEST - Platform: all
+2026-02-06 12:05:14,139 - videos - INFO - 🔍 PROCESSING PLATFORM - youtube
+2026-02-06 12:05:14,142 - videos - WARNING - ❌ NO YOUTUBE CONNECTION - Using sample data
+2026-02-06 12:05:14,143 - videos - INFO - 📝 CREATED 3 SAMPLE VIDEO DTOs for platform: youtube
+2026-02-06 12:05:14,143 - videos - WARNING - 🎭 FALLBACK - Added 3 mock YouTube videos
+2026-02-06 12:05:14,149 - videos - INFO - 💾 DATABASE UPDATE - 0 videos upserted to database
+2026-02-06 12:05:14,150 - videos - INFO - 📊 REFRESH SUMMARY - Total: 3, Real: 0, Mock: 3
+2026-02-06 12:05:14,150 - videos - WARNING - ⚠️  MOCK DATA ONLY - Only sample videos were added (no YouTube connection)
+2026-02-06 12:05:14,155 - videos - INFO - 🔄 VIDEO REFRESH REQUEST - Platform: all
+2026-02-06 12:05:14,157 - videos - INFO - 🔍 PROCESSING PLATFORM - youtube
+2026-02-06 12:05:14,159 - videos - WARNING - ❌ NO YOUTUBE CONNECTION - Using sample data
+2026-02-06 12:05:14,159 - videos - INFO - 📝 CREATED 3 SAMPLE VIDEO DTOs for platform: youtube
+2026-02-06 12:05:14,160 - videos - WARNING - 🎭 FALLBACK - Added 3 mock YouTube videos
+2026-02-06 12:05:14,163 - videos - INFO - 💾 DATABASE UPDATE - 0 videos upserted to database
+2026-02-06 12:05:14,164 - videos - INFO - 📊 REFRESH SUMMARY - Total: 3, Real: 0, Mock: 3
+2026-02-06 12:05:14,164 - videos - WARNING - ⚠️  MOCK DATA ONLY - Only sample videos were added (no YouTube connection)
+2026-02-06 12:05:14,170 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 24, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:05:14,175 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:05:14,183 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 24, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:05:14,188 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:06:30,243 - videos - INFO - 🔄 VIDEO REFRESH REQUEST - Platform: all
+2026-02-06 12:06:30,267 - videos - INFO - 🔍 PROCESSING PLATFORM - youtube
+2026-02-06 12:06:30,271 - videos - WARNING - ❌ NO YOUTUBE CONNECTION - Using sample data
+2026-02-06 12:06:30,274 - videos - INFO - 📝 CREATED 3 SAMPLE VIDEO DTOs for platform: youtube
+2026-02-06 12:06:30,274 - videos - WARNING - 🎭 FALLBACK - Added 3 mock YouTube videos
+2026-02-06 12:06:30,291 - videos - INFO - 💾 DATABASE UPDATE - 0 videos upserted to database
+2026-02-06 12:06:30,292 - videos - INFO - 📊 REFRESH SUMMARY - Total: 3, Real: 0, Mock: 3
+2026-02-06 12:06:30,292 - videos - WARNING - ⚠️  MOCK DATA ONLY - Only sample videos were added (no YouTube connection)
+2026-02-06 12:07:49,334 - videos - INFO - 🔄 VIDEO REFRESH REQUEST - Platform: all
+2026-02-06 12:07:49,353 - videos - INFO - 🔍 PROCESSING PLATFORM - youtube
+2026-02-06 12:07:49,357 - videos - WARNING - ❌ NO YOUTUBE CONNECTION - Using sample data
+2026-02-06 12:07:49,359 - videos - INFO - 📝 CREATED 3 SAMPLE VIDEO DTOs for platform: youtube
+2026-02-06 12:07:49,360 - videos - WARNING - 🎭 FALLBACK - Added 3 mock YouTube videos
+2026-02-06 12:07:49,371 - videos - INFO - 💾 DATABASE UPDATE - 0 videos upserted to database
+2026-02-06 12:07:49,371 - videos - INFO - 📊 REFRESH SUMMARY - Total: 3, Real: 0, Mock: 3
+2026-02-06 12:07:49,372 - videos - WARNING - ⚠️  MOCK DATA ONLY - Only sample videos were added (no YouTube connection)
+2026-02-06 12:08:42,477 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 20, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:08:42,514 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:09:12,370 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 20, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:09:12,375 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0
+2026-02-06 12:10:30,333 - videos - INFO - 📹 VIDEO REQUEST - Page: 1, Size: 20, Platform: None, Category: None, Search: 'None', Sort: recent
+2026-02-06 12:10:30,376 - videos - INFO - 📊 RESPONSE SUMMARY - Total videos: 0, Real: 0, Mock: 0, Total in DB: 0

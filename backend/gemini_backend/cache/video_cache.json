@@ -1,0 +1,44 @@
+{
+  "6930aa669bbeace271935ff1a358de2ef0abc5dcd1a0a04e35e118127c603ac1": {
+    "gemini_file_uri": "files/7spew7p3fqc4",
+    "uploaded_at": "2026-02-07T00:11:35.834021",
+    "duration": 15.8,
+    "expires_at": "2026-02-07T01:11:35.834021",
+    "original_filename": "v0social_4144_a11a4ec7.mp4"
+  },
+  "3e243f2cb4a6acd5f6e2793dd9ce1ffb995457e48822fc7d080a7b6a097c6936": {
+    "gemini_file_uri": "files/hmbqtgch39am",
+    "uploaded_at": "2026-02-07T00:34:13.067315",
+    "duration": 16.2,
+    "expires_at": "2026-02-07T01:34:13.067315",
+    "original_filename": "v0social_13852_ad2ec9d4.mp4"
+  },
+  "8690af652f55551b18a88a001d8746e07f2d9b3b454209b5fa90b3a6c257b451": {
+    "gemini_file_uri": "files/87hnaijm3hvb",
+    "uploaded_at": "2026-02-07T12:28:13.199584",
+    "duration": 32.266666666666666,
+    "expires_at": "2026-02-07T13:28:13.199584",
+    "original_filename": "v0social_12532_a5b9870b.mp4"
+  },
+  "26e275769e02d3e66db13ec332d262cf1e615935b0fe0b3cf7f951c982bd63bf": {
+    "gemini_file_uri": "files/t46m0gx1lk04",
+    "uploaded_at": "2026-02-09T19:25:39.922310",
+    "duration": 55.36666666666667,
+    "expires_at": "2026-02-09T20:25:39.922310",
+    "original_filename": "v0social_17660_1134a792.mp4"
+  },
+  "5ffe89969be1919f7b3698a20c23e54cc610e669d61a301dd984f206211b283c": {
+    "gemini_file_uri": "files/rub3zlpj02jz",
+    "uploaded_at": "2026-02-09T23:38:06.433585",
+    "duration": 57.46666666666667,
+    "expires_at": "2026-02-10T00:38:06.433585",
+    "original_filename": "v0social_27400_9785fb4b.mp4"
+  },
+  "f627ddf15a229f9e1ae579eb5298cc7fa62df8b2d89d7ea16eb273242432e2b8": {
+    "gemini_file_uri": "files/po33e0zx6ccn",
+    "uploaded_at": "2026-02-09T23:44:20.070042",
+    "duration": 30.6,
+    "expires_at": "2026-02-10T00:44:20.070042",
+    "original_filename": "v0social_27400_19f8a84d.mp4"
+  }
+}
