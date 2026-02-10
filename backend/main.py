@@ -17,8 +17,6 @@ from .models import *  # Import all models to register them with SQLAlchemy
 from .routers import oauth, connections, videos, analysis, projects, chats
 from .routers import project_statistics
 
-from .refresh_youtube_token import refresh_youtube_token
-
 
 
 
@@ -26,13 +24,6 @@ from .refresh_youtube_token import refresh_youtube_token
 def create_app() -> FastAPI:
 
     Base.metadata.create_all(bind=engine)
-
-    # Refresh YouTube OAuth token on startup
-    try:
-        refresh_youtube_token()
-    except Exception as e:
-        # Don't fail startup if token refresh fails
-        print(f"Warning: Failed to refresh YouTube token on startup: {e}")
 
     app = FastAPI(title="v0-social Backend", version="0.1.0")
 
