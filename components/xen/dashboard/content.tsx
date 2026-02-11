@@ -295,7 +295,7 @@ function ChatRow({ project, index }: { project: any; index: number }) {
 
   return (
     <div className="group hover:bg-gray-50 dark:hover:bg-[#2F2F37]/50 transition-colors">
-      <div className="px-6 py-3 flex items-center gap-4">
+      <div className="px-6 py-3 flex items-center gap-6">
         {/* Left - Chat Info */}
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -303,11 +303,11 @@ function ChatRow({ project, index }: { project: any; index: number }) {
           </h3>
         </div>
 
-        {/* Center - Platform Icon and Name */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Middle - Platform Icon + Project Name */}
+        <div className="flex items-center gap-2 flex-shrink-0 min-w-[200px]">
           <PlatformIcon />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            {project.category}
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+            {project.category} Project #{project.id}
           </span>
         </div>
 

@@ -521,22 +521,64 @@ export default function Streamline() {
                 })}
               </div>
 
-              {/* Transcript */}
-              <div className="space-y-4">
-                {chatMessages.map((msg) => (
-                  <div key={msg.id} className="flex gap-4">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 text-sm font-semibold text-white">
-                      {msg.avatar}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={cn("text-sm font-semibold", isDark ? "text-white" : "text-gray-900")}>{msg.author}</span>
-                        <span className={cn("text-xs", isDark ? "text-zinc-500" : "text-gray-400")}>{msg.time}</span>
-                      </div>
-                      <p className={cn("text-sm leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>{msg.message}</p>
-                    </div>
-                  </div>
-                ))}
+              {/* Typography Content */}
+              <div>
+                <h1 className={cn("scroll-m-20 text-4xl font-extrabold tracking-tight text-balance", isDark ? "text-white" : "text-gray-900")}>
+                  Taxing Laughter: The Joke Tax Chronicles
+                </h1>
+                <p className={cn("text-xl leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-400" : "text-gray-500")}>
+                  Once upon a time, in a far-off land, there was a very lazy king who
+                  spent all day lounging on his throne. One day, his advisors came to him
+                  with a problem: the kingdom was running out of money.
+                </p>
+                <h2 className={cn("mt-10 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight transition-colors first:mt-0", isDark ? "text-white border-zinc-800" : "text-gray-900 border-gray-200")}>
+                  The King&apos;s Plan
+                </h2>
+                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
+                  The king thought long and hard, and finally came up with{" "}
+                  <a
+                    href="#"
+                    className="text-purple-500 font-medium underline underline-offset-4"
+                  >
+                    a brilliant plan
+                  </a>
+                  : he would tax the jokes in the kingdom.
+                </p>
+                <blockquote className={cn("mt-6 border-l-2 pl-6 italic", isDark ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600")}>
+                  &quot;After all,&quot; he said, &quot;everyone enjoys a good joke, so
+                  it&apos;s only fair that they should pay for the privilege.&quot;
+                </blockquote>
+                <h3 className={cn("mt-8 scroll-m-20 text-2xl font-semibold tracking-tight", isDark ? "text-white" : "text-gray-900")}>
+                  The Joke Tax
+                </h3>
+                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
+                  The king&apos;s subjects were not amused. They grumbled and complained,
+                  but the king was firm:
+                </p>
+                <ul className={cn("my-6 ml-6 list-disc [&>li]:mt-2", isDark ? "text-zinc-300" : "text-gray-600")}>
+                  <li>1st level of puns: 5 gold coins</li>
+                  <li>2nd level of jokes: 10 gold coins</li>
+                  <li>3rd level of one-liners : 20 gold coins</li>
+                </ul>
+                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
+                  As a result, people stopped telling jokes, and the kingdom fell into a
+                  gloom. But there was one person who refused to let the king&apos;s
+                  foolishness get him down: a court jester named Jokester.
+                </p>
+                <h3 className={cn("mt-8 scroll-m-20 text-2xl font-semibold tracking-tight", isDark ? "text-white" : "text-gray-900")}>
+                  Jokester&apos;s Revolt
+                </h3>
+                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
+                  Jokester began sneaking into the castle in the middle of the night and
+                  leaving jokes all over the place: under the king&apos;s pillow, in his
+                  soup, even in the royal toilet. The king was furious, but he
+                  couldn&apos;t seem to stop Jokester.
+                </p>
+                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
+                  And then, one day, the people of the kingdom discovered that the jokes
+                  left by Jokester were so funny that they couldn&apos;t help but laugh.
+                  And once they started laughing, they couldn&apos;t stop.
+                </p>
               </div>
             </div>
 
