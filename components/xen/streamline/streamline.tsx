@@ -28,6 +28,23 @@ import ChatMessage from "@/components/xen/chat/chatmassegeui"
 import ChatInput from "@/components/xen/chat/chatinputui"
 import EmotionalIntensityGraph from "@/components/xen/streamline/statistics-components/emotional-anal"
 
+ type ProjectOverview = {
+   project_id: number
+   blog_markdown: string
+   summary: string
+   insights: {
+     situation?: string
+     pain?: string[]
+     impact?: string[]
+     critical_event?: string
+     decision?: string
+     [key: string]: any
+   }
+   generated_at: string | null
+   version: number
+   status: "not_started" | "pending" | "completed" | "failed" | string
+ }
+
 const Skeleton = ({ className }: { className?: string }) => {
   return <div className={cn("animate-pulse rounded-md", className)} />
 }
@@ -225,11 +242,18 @@ export default function Streamline() {
   const [resolvedVideoLink, setResolvedVideoLink] = useState<string>(forwardedVideoUrl || currentProject.videoLink)
   const [isProjectLoading, setIsProjectLoading] = useState<boolean>(!!projectId)
 
+   const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
+   const [overviewError, setOverviewError] = useState<string | null>(null)
+   const [isOverviewLoading, setIsOverviewLoading] = useState<boolean>(false)
+
   useEffect(() => {
     const run = async () => {
       if (!projectId) {
         setIsProjectLoading(false)
         setResolvedVideoLink(forwardedVideoUrl || currentProject.videoLink)
+        setProjectOverview(null)
+        setOverviewError(null)
+        setIsOverviewLoading(false)
         return
       }
 
@@ -256,6 +280,47 @@ export default function Streamline() {
 
     run()
   }, [projectId, forwardedVideoUrl])
+
+   useEffect(() => {
+     if (!projectId) return
+
+     let cancelled = false
+     let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+     const fetchOverview = async () => {
+       if (cancelled) return
+       setIsOverviewLoading(true)
+       setOverviewError(null)
+       try {
+         const res = await fetch(
+           `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/overview`,
+           { cache: "no-store" }
+         )
+         if (!res.ok) {
+           throw new Error(`Failed to load overview (${res.status})`)
+         }
+         const data = (await res.json()) as ProjectOverview
+         if (cancelled) return
+         setProjectOverview(data)
+
+         if (data?.status === "pending" || data?.status === "not_started") {
+           pollTimer = setTimeout(fetchOverview, 2000)
+         }
+       } catch (e: any) {
+         if (cancelled) return
+         setOverviewError(e?.message || "Failed to load overview")
+       } finally {
+         if (!cancelled) setIsOverviewLoading(false)
+       }
+     }
+
+     fetchOverview()
+
+     return () => {
+       cancelled = true
+       if (pollTimer) clearTimeout(pollTimer)
+     }
+   }, [projectId])
 
   const [isDark, setIsDark] = useState(true)
   const [activeTab, setActiveTab] = useState("transcript")
@@ -498,27 +563,7 @@ export default function Streamline() {
 
               {/* Lower Tabs */}
               <div className={cn("flex items-center gap-6 px-0 border-b", isDark ? "border-zinc-800" : "border-gray-200")}>
-                {tabs.map((tab) => {
-                  const isActive = activeTab === tab.id
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={cn(
-                        "pb-3 text-sm font-medium transition-colors border-b-2",
-                        isActive
-                          ? isDark
-                            ? "text-white border-purple-600"
-                            : "text-gray-900 border-purple-600"
-                          : isDark
-                            ? "text-zinc-400 border-transparent hover:text-zinc-300"
-                            : "text-gray-500 border-transparent hover:text-gray-700"
-                      )}
-                    >
-                      {tab.label}
-                    </button>
-                  )
-                })}
+                {/* Tabs removed */}
               </div>
 
               {/* Typography Content */}
@@ -588,8 +633,12 @@ export default function Streamline() {
               {/* Summary Card */}
               <Card className={cn(isDark ? "border-zinc-800 bg-zinc-900/50" : "border-gray-200 bg-white")}>
                 <CardContent className="pt-6">
-                  <h2 className={cn("text-sm font-semibold mb-3", isDark ? "text-white" : "text-gray-900")}>{insights.summary && "Summary"}</h2>
-                  <p className={cn("text-sm leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>{insights.summary}</p>
+                  <h2 className={cn("text-sm font-semibold mb-3", isDark ? "text-white" : "text-gray-900")}>
+                    {(projectOverview?.summary || insights.summary) && "Summary"}
+                  </h2>
+                  <p className={cn("text-sm leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>
+                    {projectOverview?.summary || insights.summary}
+                  </p>
                 </CardContent>
               </Card>
 
@@ -600,15 +649,29 @@ export default function Streamline() {
                 <Card className={cn(isDark ? "border-zinc-800 bg-zinc-900/50" : "border-gray-200 bg-gray-50")}>
                   <CardContent className="pt-6 space-y-6">
 
+                    {overviewError && (
+                      <div className={cn("text-xs", isDark ? "text-red-300" : "text-red-600")}>
+                        {overviewError}
+                      </div>
+                    )}
+
+                    {isOverviewLoading && !projectOverview && (
+                      <div className={cn("text-xs", isDark ? "text-zinc-400" : "text-gray-500")}>
+                        Loading overview...
+                      </div>
+                    )}
+
                     <div>
                       <h4 className={cn("text-sm font-semibold mb-2", isDark ? "text-white" : "text-gray-900")}>Situation</h4>
-                      <p className={cn("text-xs leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>{insights.situation}</p>
+                      <p className={cn("text-xs leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>
+                        {projectOverview?.insights?.situation || insights.situation}
+                      </p>
                     </div>
 
                     <div>
                       <h4 className={cn("text-sm font-semibold mb-2", isDark ? "text-white" : "text-gray-900")}>Pain</h4>
                       <ul className="space-y-2">
-                        {insights.pain.map((item, idx) => (
+                        {(projectOverview?.insights?.pain || insights.pain).map((item: string, idx: number) => (
                           <li key={idx} className={cn("text-xs flex gap-2", isDark ? "text-zinc-300" : "text-gray-600")}>
                             <span className={cn("flex-shrink-0", isDark ? "text-purple-400" : "text-purple-500")}>•</span>
                             <span>{item}</span>
@@ -620,7 +683,7 @@ export default function Streamline() {
                     <div>
                       <h4 className={cn("text-sm font-semibold mb-2", isDark ? "text-white" : "text-gray-900")}>Impact</h4>
                       <ul className="space-y-2">
-                        {insights.impact.map((item, idx) => (
+                        {(projectOverview?.insights?.impact || insights.impact).map((item: string, idx: number) => (
                           <li key={idx} className={cn("text-xs flex gap-2", isDark ? "text-zinc-300" : "text-gray-600")}>
                             <span className={cn("flex-shrink-0", isDark ? "text-purple-400" : "text-purple-500")}>•</span>
                             <span>{item}</span>
@@ -631,12 +694,16 @@ export default function Streamline() {
 
                     <div>
                       <h4 className={cn("text-sm font-semibold mb-2", isDark ? "text-white" : "text-gray-900")}>Critical Event</h4>
-                      <p className={cn("text-xs leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>{insights.criticalEvent}</p>
+                      <p className={cn("text-xs leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>
+                        {projectOverview?.insights?.critical_event || insights.criticalEvent}
+                      </p>
                     </div>
 
                     <div>
                       <h4 className={cn("text-sm font-semibold mb-2", isDark ? "text-white" : "text-gray-900")}>Decision</h4>
-                      <p className={cn("text-xs leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>{insights.decision}</p>
+                      <p className={cn("text-xs leading-relaxed", isDark ? "text-zinc-300" : "text-gray-600")}>
+                        {projectOverview?.insights?.decision || insights.decision}
+                      </p>
                     </div>
 
                   </CardContent>

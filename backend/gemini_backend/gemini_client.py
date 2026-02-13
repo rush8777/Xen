@@ -1,4 +1,5 @@
 import asyncio
+import time
 from pathlib import Path
 from typing import List, Tuple
 
@@ -7,6 +8,7 @@ from google.genai import types
 
 from . import config
 from .video_processor import format_timestamp
+ 
 
 
 
@@ -179,12 +181,12 @@ async def upload_video_to_gemini(video_path: Path) -> str:
     )
 
     # Wait until file is ready
-    while file.state == "PROCESSING":
+    while getattr(file.state, "name", None) == "PROCESSING":
         await asyncio.sleep(1)
         file = client.files.get(name=file.name)
 
-    if file.state != "ACTIVE":
-        raise RuntimeError(f"File upload failed: {file.state}")
+    if getattr(file.state, "name", None) != "ACTIVE":
+        raise RuntimeError(f"File upload failed: {getattr(file.state, 'name', file.state)}")
 
     return file.name
 
@@ -194,52 +196,28 @@ async def upload_video_to_gemini(video_path: Path) -> str:
 # -------------------------------------------------------------------
 
 async def get_interval_description(
-    file_name: str,
+    cached_content_name: str,
     start: int,
     end: int,
-    mime_type: str = "video/mp4"  # add mime_type parameter
+    model: str = "models/gemini-2.5-flash",
 ) -> str:
     """
     Generate strict visual description for a time interval with robust error handling
     """
     try:
         # Validate inputs
-        if not file_name:
-            raise ValueError("file_name cannot be empty")
+        if not cached_content_name:
+            raise ValueError("cached_content_name cannot be empty")
         if start < 0 or end < 0:
             raise ValueError("start and end times must be non-negative")
         if start >= end:
             raise ValueError("start time must be less than end time")
         
-        # Normalize file URI
-        file_uri = file_name
-        if not file_uri.startswith("https://generativelanguage.googleapis.com/files/"):
-            if file_uri.startswith("files/"):
-                file_uri = f"https://generativelanguage.googleapis.com/{file_uri}"
-            else:
-                file_uri = f"https://generativelanguage.googleapis.com/files/{file_uri}"
-        
-        
-        # Create prompt
-        prompt = f"""
-Observe the video ONLY from {start} seconds to {end} seconds.
+        # Create prompt - request analysis of specific time range
+        # The system instructions are already in the cached content
+        prompt = f"""Analyze the video interval from {format_timestamp(start, end)} ({start}s to {end}s).
 
-RULES:
-- Do NOT analyze or interpret
-- Do NOT summarize across intervals
-- Skip  if nothing changes and keep a note "Cannot describe"
-- Describe ONLY what is visually present
-
-Describe:
-- Visible subjects
-- Actions and movements
-- Environment and setting
-- Colors, lighting, composition
-- Visible text
-- Camera movement
-
-Provide 200 words of pure visual observation.
-""".strip()
+Follow the system instructions to provide a complete interval report."""
         
         # Get event loop
         loop = asyncio.get_running_loop()
@@ -247,29 +225,15 @@ Provide 200 words of pure visual observation.
         # Define generation function
         def generate():
             try:
+                # Use the cached content which already has the video and system instructions
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=[
-                        types.Content(
-                            role="user",
-                            parts=[
-                                types.Part(
-                                    file_data=types.FileData(
-                                        file_uri=file_uri,
-                                        mime_type=mime_type
-                                    )
-                                ),
-                                types.Part(text=prompt)
-                            ],
-                        )
-                    ],
+                    model=model,
+                    contents=prompt,
                     config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTIONS,
-                        temperature=0.1
-                          # Increased from 300 to 800
-                    )
+                        cached_content=cached_content_name,
+                        temperature=0.2,
+                    ),
                 )
-                
                 return response
                 
             except Exception as e:
@@ -278,7 +242,7 @@ Provide 200 words of pure visual observation.
         # Execute with timeout
         response = await asyncio.wait_for(
             loop.run_in_executor(None, generate),
-            timeout=30.0  # 30 second timeout
+            timeout=60.0  # 60 second timeout for video processing
         )
         
         result = response.text.strip()
@@ -303,7 +267,7 @@ Provide 200 words of pure visual observation.
 # -------------------------------------------------------------------
 
 async def analyze_video_intervals(
-    file_name: str,
+    cached_content_name: str,
     intervals: List[Tuple[int, int]]
 ) -> List[Tuple[str, str]]:
     """
@@ -317,7 +281,7 @@ async def analyze_video_intervals(
             timestamp = format_timestamp(start, end)
             try:
                 description = await get_interval_description(
-                    file_name, start, end
+                    cached_content_name, start, end
                 )
                 return timestamp, description
             except Exception as e:

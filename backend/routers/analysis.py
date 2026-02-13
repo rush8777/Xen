@@ -24,9 +24,10 @@ from ..extractor.comments_extractor import CommentsExtractor
 
 # Import database dependencies and models
 from ..dependencies import get_db
-from ..models import Project, User, ProjectStatistics
+from ..models import Project, User, ProjectStatistics, ProjectOverview
 from ..gemini_backend.config import GEMINI_API_KEY
 from ..services.project_statistics_generator import ProjectStatisticsGenerator
+from ..services.project_overview_generator import ProjectOverviewGenerator
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +53,7 @@ video_analyzer = VideoAnalyzer()
 comments_extractor = CommentsExtractor()
 
 stats_generator = ProjectStatisticsGenerator(api_key=GEMINI_API_KEY)
+overview_generator = ProjectOverviewGenerator(api_key=GEMINI_API_KEY)
 
 
 @dataclass
@@ -133,6 +135,77 @@ def _generate_statistics_sync(project_id: int):
             logger.error(f"Statistics generation failed for project {project_id}: {e}")
             stats.status = "failed"
             stats.error = str(e)
+            db2.commit()
+    finally:
+        db2.close()
+
+
+def _generate_overview_sync(project_id: int) -> None:
+    """Generate project overview (blog markdown + summary + insights) in background task (sync)."""
+    from ..database import SessionLocal
+
+    db2 = SessionLocal()
+    try:
+        project = db2.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            logger.error(f"Project {project_id} not found for overview generation")
+            return
+
+        overview = (
+            db2.query(ProjectOverview)
+            .filter(ProjectOverview.project_id == project_id)
+            .first()
+        )
+        if not overview:
+            overview = ProjectOverview(project_id=project_id, blog_markdown="", summary="", insights_json="{}", status="pending")
+            db2.add(overview)
+            db2.commit()
+            db2.refresh(overview)
+        else:
+            overview.status = "pending"
+            overview.error = None
+            db2.commit()
+
+        if not project.analysis_file_path:
+            overview.status = "failed"
+            overview.error = "Project has no analysis file. Cannot generate overview."
+            db2.commit()
+            return
+
+        try:
+            overview_data = overview_generator.generate_overview(
+                analysis_file_path=project.analysis_file_path or "",
+                video_url=project.video_url or "",
+                project_name=project.name,
+                project_id=project.id,
+                job_id=project.job_id,
+            )
+
+            blog = overview_data.get("blog") if isinstance(overview_data, dict) else None
+            blog_markdown = ""
+            if isinstance(blog, dict):
+                blog_markdown = str(blog.get("markdown") or "")
+
+            summary = str(overview_data.get("summary") or "")
+            insights = overview_data.get("insights")
+            if not isinstance(insights, dict):
+                insights = {}
+
+            import json as _json
+            from datetime import datetime as _dt
+
+            overview.blog_markdown = blog_markdown
+            overview.summary = summary
+            overview.insights_json = _json.dumps(insights)
+            overview.status = "completed"
+            overview.generated_at = _dt.utcnow()
+            overview.error = None
+            db2.commit()
+            logger.info(f"Overview generation completed for project {project_id}")
+        except Exception as e:
+            logger.error(f"Overview generation failed for project {project_id}: {e}")
+            overview.status = "failed"
+            overview.error = str(e)
             db2.commit()
     finally:
         db2.close()
@@ -258,6 +331,12 @@ async def analyze_from_url(
                     _generate_statistics_sync(project_id)
                 except Exception as e:
                     logger.warning(f"Statistics generation failed (non-critical): {e}")
+
+                # overview generation
+                try:
+                    _generate_overview_sync(project_id)
+                except Exception as e:
+                    logger.warning(f"Overview generation failed (non-critical): {e}")
 
             _set_progress(job_id_, status="completed", step=5, text="Opening Streamline", project_id=project_id)
         except Exception as e:

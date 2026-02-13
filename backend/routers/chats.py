@@ -139,8 +139,8 @@ def update_chat(
     )
 
 
-@router.delete("/chats/{chat_id}", status_code=204)
-def delete_chat(chat_id: int, db: Session = Depends(get_db)) -> None:
+@router.delete("/chats/{chat_id}", status_code=200)
+def delete_chat(chat_id: int, db: Session = Depends(get_db)) -> dict:
     """Delete chat"""
     chat = db.query(Chat).filter(Chat.id == chat_id).first()
     if not chat:
@@ -148,5 +148,7 @@ def delete_chat(chat_id: int, db: Session = Depends(get_db)) -> None:
 
     db.delete(chat)
     db.commit()
+
+    return {"status": "ok"}
 
 

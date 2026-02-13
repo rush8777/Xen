@@ -22,3 +22,7 @@ MAX_CONCURRENT_REQUESTS = 10
 # Cache settings
 CACHE_EXPIRY_HOURS = 1
 CACHE_FILE = CACHE_DIR / "video_cache.json"
+
+# Statistics cache settings (prompt/output cache for per-component generation)
+STATISTICS_CACHE_EXPIRY_HOURS = int(os.getenv("STATISTICS_CACHE_EXPIRY_HOURS", "0"))
+STATISTICS_CACHE_FILE = CACHE_DIR / "statistics_cache.json"

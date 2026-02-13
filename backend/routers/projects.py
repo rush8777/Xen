@@ -227,8 +227,8 @@ def update_project(
     )
 
 
-@router.delete("/{project_id}", status_code=204)
-def delete_project(project_id: int, db: Session = Depends(get_db)) -> None:
+@router.delete("/{project_id}", status_code=200)
+def delete_project(project_id: int, db: Session = Depends(get_db)) -> dict:
     """Delete project"""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -236,5 +236,7 @@ def delete_project(project_id: int, db: Session = Depends(get_db)) -> None:
 
     db.delete(project)
     db.commit()
+
+    return {"status": "ok"}
 
 

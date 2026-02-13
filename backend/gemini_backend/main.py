@@ -9,14 +9,33 @@ import asyncio
 import sys
 from pathlib import Path
 import uuid
-from cache_manager import cache_manager
-from video_processor import get_video_duration, generate_timestamps, save_descriptions
-from gemini_client import upload_video_to_gemini, analyze_video_intervals
-import config
+
+try:
+    from .cache_manager import cache_manager
+    from .video_processor import get_video_duration, generate_timestamps, save_descriptions
+    from .gemini_client import (
+        upload_video_to_gemini,
+        analyze_video_intervals,
+        client,
+        SYSTEM_INSTRUCTIONS,
+    )
+    from google.genai import types
+    from . import config
+except ImportError:  # pragma: no cover
+    from cache_manager import cache_manager
+    from video_processor import get_video_duration, generate_timestamps, save_descriptions
+    from gemini_client import (
+        upload_video_to_gemini,
+        analyze_video_intervals,
+        client,
+        SYSTEM_INSTRUCTIONS,
+    )
+    from google.genai import types
+    import config
 
 
 class VideoAnalyzer:
-    """Video analyzer without API endpoints"""
+    """Video analyzer with proper cached content support"""
     
     def __init__(self):
         self.jobs = {}
@@ -32,26 +51,26 @@ class VideoAnalyzer:
         # Check cache
         cached_entry = cache_manager.get_cached_reference(video_hash)
         
+        duration = get_video_duration(video_path)
+        print(f"   Duration: {duration:.2f}s")
+        
         if cached_entry:
             # Cache hit - use existing reference
             print(f"✅ Cache hit! Using existing Gemini reference")
-            print(f"   Duration: {cached_entry['duration']:.2f}s")
             print(f"   Original file: {cached_entry['original_filename']}")
             
             self.jobs[job_id] = {
                 "filename": video_path.name,
                 "video_path": video_path,
-                "gemini_file_uri": cached_entry['gemini_file_uri'],
-                "duration": cached_entry['duration'],
+                "cached_content_name": cached_entry.get('cached_content_name'),
+                "duration": duration,
                 "video_hash": video_hash,
-                "status": "uploaded",
+                "status": "cached",
                 "cache_hit": True
             }
         else:
-            # Cache miss - need to upload
+            # Cache miss - need to upload and create cache
             print(f"⚠️  Cache miss - will upload to Gemini")
-            duration = get_video_duration(video_path)
-            print(f"   Duration: {duration:.2f}s")
             
             self.jobs[job_id] = {
                 "filename": video_path.name,
@@ -65,46 +84,83 @@ class VideoAnalyzer:
         return job_id
     
     async def analyze_job(self, job_id: str) -> Path:
-        """Analyze a video job"""
+        """Analyze a video job using proper cached content"""
         if job_id not in self.jobs:
             raise ValueError(f"Job ID not found: {job_id}")
         
         job = self.jobs[job_id]
         
-        # Upload to Gemini if not cached
-        if not job.get('cache_hit', False):
+        # Create or retrieve cached content
+        if not job.get('cache_hit', False) or not job.get('cached_content_name'):
             try:
                 print(f"\n📤 Uploading video to Gemini...")
                 job['status'] = "uploading"
                 
-                gemini_file_uri = await upload_video_to_gemini(job['video_path'])
-                job['gemini_file_uri'] = gemini_file_uri
+                # Upload video file
+                gemini_file_name = await upload_video_to_gemini(job['video_path'])
+                video_file = client.files.get(name=gemini_file_name)
                 
-                print(f"✅ Upload successful!")
-                print(f"   URI: {gemini_file_uri}")
+                # Wait for file to be ready
+                while getattr(video_file.state, "name", None) == "PROCESSING":
+                    print("   Processing video...")
+                    await asyncio.sleep(2.5)
+                    video_file = client.files.get(name=video_file.name)
                 
-                # Save to cache
+                if getattr(video_file.state, "name", None) != "ACTIVE":
+                    raise RuntimeError(
+                        f"Video file is not ACTIVE: {getattr(video_file.state, 'name', video_file.state)}"
+                    )
+                
+                print(f"✅ Video uploaded successfully!")
+                print(f"   File: {video_file.name}")
+                
+                # Create cached content with system instructions and video
+                print(f"\n🔄 Creating cached content...")
+                
+                cache = client.caches.create(
+                    model="models/gemini-2.5-flash",
+                    config=types.CreateCachedContentConfig(
+                        display_name=f"video-analysis-{job['video_hash'][:12]}",
+                        system_instruction=SYSTEM_INSTRUCTIONS,
+                        contents=[video_file],
+                        ttl="3600s",  # 1 hour cache
+                    ),
+                )
+                
+                print(f"✅ Cached content created!")
+                print(f"   Cache name: {cache.name}")
+                
+                job['cached_content_name'] = cache.name
+                job['gemini_file_name'] = video_file.name
+                
+                # Save to cache manager
                 cache_manager.save_cache_entry(
                     job['video_hash'],
-                    gemini_file_uri,
+                    cache.name,  # Save the cached content name
                     job['duration'],
                     job['filename']
                 )
                 
-                job['status'] = "uploaded"
+                job['status'] = "cached"
+                
             except Exception as e:
                 job['status'] = "upload_failed"
-                raise Exception(f"Upload failed: {str(e)}")
+                raise Exception(f"Upload/cache creation failed: {str(e)}")
         
         # Generate intervals
         intervals = generate_timestamps(job['duration'])
         print(f"\n🎬 Analyzing {len(intervals)} intervals (5-second chunks)...")
+        print(f"   Total intervals: {len(intervals)}")
+        print(f"   Estimated time: ~{len(intervals) * 2}s (with concurrency)")
         
         try:
             job['status'] = "analyzing"
             
-            # Analyze all intervals concurrently
-            descriptions = await analyze_video_intervals(job['gemini_file_uri'], intervals)
+            # Analyze all intervals concurrently using cached content
+            descriptions = await analyze_video_intervals(
+                job['cached_content_name'],  # Pass cached content name
+                intervals
+            )
             
             # Save results
             output_path = await save_descriptions(job_id, descriptions)
@@ -113,7 +169,7 @@ class VideoAnalyzer:
             job['output_path'] = output_path
             
             print(f"\n✅ Analysis completed!")
-            print(f"   Intervals analyzed: {len(intervals)}")
+            print(f"   Intervals analyzed: {len(descriptions)}")
             print(f"   Output file: {output_path}")
             
             return output_path
@@ -170,7 +226,12 @@ async def analyze_video_command(video_path: Path, output: str = None):
         
         with open(output_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            print(content)
+            # Show first 2000 characters
+            if len(content) > 2000:
+                print(content[:2000])
+                print("\n... [truncated, see output file for full results] ...")
+            else:
+                print(content)
         
         print("=" * 70)
         print(f"💾 Results saved to: {output_path}")
@@ -186,6 +247,8 @@ async def analyze_video_command(video_path: Path, output: str = None):
         
     except Exception as e:
         print(f"\n❌ Error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
@@ -199,7 +262,7 @@ def cleanup_cache_command():
 def list_cache_command():
     """List all cache entries"""
     if not cache_manager.cache_data:
-        print("📭 Cache is empty")
+        print("🔭 Cache is empty")
         return
     
     print("=" * 70)
@@ -234,7 +297,7 @@ def info_command():
     print("=" * 70)
     print("VIDEO ANALYZER - SYSTEM INFO")
     print("=" * 70)
-    print(f"\n📁 Base directory: {config.BASE_DIR}")
+    print(f"\n📂 Base directory: {config.BASE_DIR}")
     print(f"📤 Upload directory: {config.UPLOAD_DIR}")
     print(f"📥 Output directory: {config.OUTPUT_DIR}")
     print(f"💾 Cache directory: {config.CACHE_DIR}")

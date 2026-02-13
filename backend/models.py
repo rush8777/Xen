@@ -250,3 +250,69 @@ class ProjectStatistics(Base):
     project = relationship("Project")
 
 
+class GeminiCache(Base):
+    __tablename__ = "gemini_caches"
+    __table_args__ = (
+        UniqueConstraint(
+            "video_hash",
+            "prompt_template_key",
+            "model",
+            name="uq_gemini_cache_video_prompt_model",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    video_hash = Column(String(64), nullable=False, index=True)
+    prompt_template_key = Column(String(255), nullable=False, index=True)
+    model = Column(String(255), nullable=False, index=True)
+
+    gemini_file_name = Column(String(255), nullable=True)
+    gemini_file_uri = Column(String(500), nullable=True)
+    cached_content_name = Column(String(255), nullable=False)
+
+    ttl_seconds = Column(Integer, nullable=False, default=0)
+    expires_at = Column(DateTime, nullable=True, index=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class ProjectOverview(Base):
+    __tablename__ = "project_overviews"
+    __table_args__ = (UniqueConstraint("project_id", name="uq_project_overview_project"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
+
+    blog_markdown = Column(Text, nullable=False, default="")
+    summary = Column(Text, nullable=False, default="")
+    insights_json = Column(Text, nullable=False, default="{}")
+
+    status = Column(String(20), nullable=False, default="pending")  # not_started, pending, completed, failed
+    version = Column(Integer, nullable=False, default=1)
+    error = Column(Text, nullable=True)
+
+    generated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+
+

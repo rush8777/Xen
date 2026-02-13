@@ -19,6 +19,9 @@ class Settings:
         
         # yt-dlp specific settings
         self.FFMPEG_PATH = os.getenv("FFMPEG_PATH", None)
+        
+        # Download timeout settings
+        self.DOWNLOAD_TIMEOUT_SECONDS = int(os.getenv("DOWNLOAD_TIMEOUT_SECONDS", "300"))  # 5 minutes
 
 
 # Create a global settings instance

@@ -295,24 +295,24 @@ function ChatRow({ project, index }: { project: any; index: number }) {
 
   return (
     <div className="group hover:bg-gray-50 dark:hover:bg-[#2F2F37]/50 transition-colors">
-      <div className="px-6 py-3 flex items-center gap-6">
+      <div className="px-6 py-3 flex items-center">
         {/* Left - Chat Info */}
-        <div className="flex-1 min-w-0">
+        <div className="w-48 min-w-0">
           <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate">
             {project.title.replace(/\.\.$/, '')}
           </h3>
         </div>
 
-        {/* Middle - Platform Icon + Project Name */}
-        <div className="flex items-center gap-2 flex-shrink-0 min-w-[200px]">
+        {/* Middle - Platform Icon + Project Name (Centered) */}
+        <div className="flex-1 flex justify-center items-center gap-2 flex-shrink-0">
           <PlatformIcon />
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-            {project.category} Project #{project.id}
+            Project #{project.id}
           </span>
         </div>
 
         {/* Right - Time, Status, Menu */}
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-3 flex-shrink-0 w-48 justify-end">
           {/* Time */}
           <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
             {index === 0 ? "20h ago" : index === 1 ? "5d ago" : "29d ago"}

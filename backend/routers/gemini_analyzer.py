@@ -3,6 +3,7 @@ Gemini Video Analyzer Module
 Wrapper for direct integration without CLI interface
 """
 
+import asyncio
 from pathlib import Path
 import uuid
 from typing import Dict
@@ -25,8 +26,16 @@ sys.path.append(os.path.dirname(BASE_DIR))
 # sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'gemini-cli'))
 
 from ..gemini_backend.cache_manager import cache_manager
+from ..gemini_backend import config
 from ..gemini_backend.video_processor import get_video_duration, generate_timestamps, save_descriptions
-from ..gemini_backend.gemini_client import upload_video_to_gemini, analyze_video_intervals
+from ..gemini_backend.gemini_client import (
+    upload_video_to_gemini,
+    analyze_video_intervals,
+    client,
+    SYSTEM_INSTRUCTIONS,
+)
+
+from google.genai import types
 
 
 class VideoAnalyzer:
@@ -61,11 +70,11 @@ class VideoAnalyzer:
             self.jobs[job_id] = {
                 "filename": video_path.name,
                 "video_path": video_path,
-                "gemini_file_uri": cached_entry['gemini_file_uri'],
-                "duration": cached_entry['duration'],
+                "cached_content_name": cached_entry.get("cached_content_name"),
+                "duration": cached_entry["duration"],
                 "video_hash": video_hash,
-                "status": "uploaded",
-                "cache_hit": True
+                "status": "cached",
+                "cache_hit": bool(cached_entry.get("cached_content_name")),
             }
         else:
             # Cache miss - need to upload
@@ -101,23 +110,45 @@ class VideoAnalyzer:
         
         job = self.jobs[job_id]
         
-        # Upload to Gemini if not cached
-        if not job.get('cache_hit', False):
+        # Upload + create cached content if not cached
+        if not job.get("cache_hit", False) or not job.get("cached_content_name"):
             try:
                 job['status'] = "uploading"
-                
-                gemini_file_uri = await upload_video_to_gemini(job['video_path'])
-                job['gemini_file_uri'] = gemini_file_uri
-                
+
+                gemini_file_name = await upload_video_to_gemini(job["video_path"])
+                video_file = client.files.get(name=gemini_file_name)
+
+                while getattr(video_file.state, "name", None) == "PROCESSING":
+                    await asyncio.sleep(2.5)
+                    video_file = client.files.get(name=video_file.name)
+
+                if getattr(video_file.state, "name", None) != "ACTIVE":
+                    raise RuntimeError(
+                        f"Video file is not ACTIVE: {getattr(video_file.state, 'name', video_file.state)}"
+                    )
+
+                cache = client.caches.create(
+                    model="models/gemini-2.5-flash",
+                    config=types.CreateCachedContentConfig(
+                        display_name=f"video-analysis-{job['video_hash'][:12]}",
+                        system_instruction=SYSTEM_INSTRUCTIONS,
+                        contents=[video_file],
+                        ttl=f"{int(config.CACHE_EXPIRY_HOURS * 3600)}s",
+                    ),
+                )
+
+                job["cached_content_name"] = cache.name
+
                 # Save to cache
                 cache_manager.save_cache_entry(
                     job['video_hash'],
-                    gemini_file_uri,
+                    job["cached_content_name"],
                     job['duration'],
-                    job['filename']
+                    job['filename'],
+                    gemini_file_name=video_file.name,
                 )
                 
-                job['status'] = "uploaded"
+                job['status'] = "cached"
             except Exception as e:
                 job['status'] = "upload_failed"
                 raise Exception(f"Upload failed: {str(e)}")
@@ -129,7 +160,7 @@ class VideoAnalyzer:
             job['status'] = "analyzing"
             
             # Analyze all intervals concurrently
-            descriptions = await analyze_video_intervals(job['gemini_file_uri'], intervals)
+            descriptions = await analyze_video_intervals(job["cached_content_name"], intervals)
             
             # Save results
             output_path = await save_descriptions(job_id, descriptions)

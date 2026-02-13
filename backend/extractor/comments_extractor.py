@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Generator
+from config import settings
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
@@ -67,6 +68,7 @@ class CommentsExtractor:
             'getcomments': True,  # Enable comment extraction
             'max_comments': max_comments,
             'max_comment_count': max_comments if max_comments else 0,
+            'socket_timeout': settings.DOWNLOAD_TIMEOUT_SECONDS,  # 5 minutes
         }
         
         comments_list: List[Comment] = []
@@ -192,6 +194,7 @@ class CommentsExtractor:
             'no_warnings': True,
             'extract_flat': False,
             'getcomments': True,
+            'socket_timeout': settings.DOWNLOAD_TIMEOUT_SECONDS,  # 5 minutes
         }
         
         if max_comments:

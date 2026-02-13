@@ -20,25 +20,50 @@
     "expires_at": "2026-02-07T13:28:13.199584",
     "original_filename": "v0social_12532_a5b9870b.mp4"
   },
-  "26e275769e02d3e66db13ec332d262cf1e615935b0fe0b3cf7f951c982bd63bf": {
-    "gemini_file_uri": "files/t46m0gx1lk04",
-    "uploaded_at": "2026-02-09T19:25:39.922310",
-    "duration": 55.36666666666667,
-    "expires_at": "2026-02-09T20:25:39.922310",
-    "original_filename": "v0social_17660_1134a792.mp4"
+  "5e3a21f88b4fb611621c1149c7bf1ce895e2ad8c9c65222f7738cc33ef7b71ce": {
+    "gemini_file_uri": "files/nztiab8oi8gj",
+    "uploaded_at": "2026-02-11T14:45:38.352806",
+    "duration": 40.56666666666667,
+    "expires_at": "2026-02-11T15:45:38.352806",
+    "original_filename": "my_video.mp4"
   },
-  "5ffe89969be1919f7b3698a20c23e54cc610e669d61a301dd984f206211b283c": {
-    "gemini_file_uri": "files/rub3zlpj02jz",
-    "uploaded_at": "2026-02-09T23:38:06.433585",
-    "duration": 57.46666666666667,
-    "expires_at": "2026-02-10T00:38:06.433585",
-    "original_filename": "v0social_27400_9785fb4b.mp4"
+  "3ee5a74d15ebe29567e8eccfda91e5f0291646810253f28d2d94eefb7144a4d4": {
+    "gemini_file_uri": "files/vdma2an60tco",
+    "uploaded_at": "2026-02-12T00:33:37.910029",
+    "duration": 34.90153333333333,
+    "expires_at": "2026-02-12T01:33:37.910029",
+    "original_filename": "v0social_14784_61ea6312.mp4"
+  },
+  "26e275769e02d3e66db13ec332d262cf1e615935b0fe0b3cf7f951c982bd63bf": {
+    "cached_content_name": "files/pxhjx03xu2f0",
+    "gemini_file_name": null,
+    "uploaded_at": "2026-02-13T13:35:52.585892",
+    "duration": 55.36666666666667,
+    "expires_at": "2026-02-13T14:35:52.585892",
+    "original_filename": "v0social_24116_f1491c0a.mp4"
   },
   "f627ddf15a229f9e1ae579eb5298cc7fa62df8b2d89d7ea16eb273242432e2b8": {
-    "gemini_file_uri": "files/po33e0zx6ccn",
-    "uploaded_at": "2026-02-09T23:44:20.070042",
+    "cached_content_name": "files/gf1c8t0n6bxh",
+    "gemini_file_name": null,
+    "uploaded_at": "2026-02-13T13:43:50.417480",
     "duration": 30.6,
-    "expires_at": "2026-02-10T00:44:20.070042",
-    "original_filename": "v0social_27400_19f8a84d.mp4"
+    "expires_at": "2026-02-13T14:43:50.417480",
+    "original_filename": "v0social_1916_7b171dfe.mp4"
+  },
+  "5ffe89969be1919f7b3698a20c23e54cc610e669d61a301dd984f206211b283c": {
+    "cached_content_name": "cachedContents/tr2jaw0vwjss104z4ety6lpswar33mt7k1rlbmtr",
+    "gemini_file_name": "files/va4nou967jv2",
+    "uploaded_at": "2026-02-13T14:03:36.177298",
+    "duration": 57.46666666666667,
+    "expires_at": "2026-02-13T15:03:36.177298",
+    "original_filename": "v0social_8728_b6cc35db.mp4"
+  },
+  "56c218bb78d54bfe435f68985e35cb1f518827c36a6e73a7d2237b37ce46b1f4": {
+    "cached_content_name": "cachedContents/tw0ff3fe78oqjjx4655uzyxyn5ve7p9i48jah7fz",
+    "gemini_file_name": "files/j1l46d5o7yhh",
+    "uploaded_at": "2026-02-13T16:07:06.485780",
+    "duration": 370.1030666666667,
+    "expires_at": "2026-02-13T17:07:06.485780",
+    "original_filename": "v0social_23944_1dcfed8e.mp4"
   }
 }

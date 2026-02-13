@@ -41,6 +41,18 @@ class CacheManager:
             return None
         
         cache_entry = self.cache_data[video_hash]
+        cached_content_name = cache_entry.get("cached_content_name")
+        legacy_file_ref = cache_entry.get("gemini_file_uri")
+
+        if cached_content_name and not str(cached_content_name).startswith("cachedContents/"):
+            del self.cache_data[video_hash]
+            self._save_cache()
+            return None
+
+        if legacy_file_ref and not cached_content_name:
+            del self.cache_data[video_hash]
+            self._save_cache()
+            return None
         expires_at = datetime.fromisoformat(cache_entry['expires_at'])
         
         # Check if expired
@@ -52,14 +64,30 @@ class CacheManager:
         
         return cache_entry
     
-    def save_cache_entry(self, video_hash: str, gemini_file_uri: str, 
-                        duration: float, original_filename: str):
-        """Save new cache entry"""
+    def save_cache_entry(
+        self, 
+        video_hash: str, 
+        cached_content_name: str,
+        duration: float, 
+        original_filename: str,
+        gemini_file_name: str = None
+    ):
+        """
+        Save new cache entry with cached content name
+        
+        Args:
+            video_hash: SHA256 hash of video file
+            cached_content_name: Gemini cached content name (e.g., "cachedContents/abc123")
+            duration: Video duration in seconds
+            original_filename: Original video filename
+            gemini_file_name: Optional Gemini file name for reference
+        """
         now = datetime.now()
         expires_at = now + timedelta(hours=config.CACHE_EXPIRY_HOURS)
         
         self.cache_data[video_hash] = {
-            "gemini_file_uri": gemini_file_uri,
+            "cached_content_name": cached_content_name,  # This is what we need for analysis
+            "gemini_file_name": gemini_file_name,  # Optional, for reference
             "uploaded_at": now.isoformat(),
             "duration": duration,
             "expires_at": expires_at.isoformat(),

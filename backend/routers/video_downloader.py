@@ -88,6 +88,7 @@ class VideoDownloader:
             'outtmpl': outtmpl,
             'quiet': True,
             'no_warnings': True,
+            'socket_timeout': 300,  # 5 minutes
         }
         
         # Add audio extraction post-processor if needed

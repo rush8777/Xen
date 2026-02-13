@@ -77,6 +77,7 @@ class VideoDownloader:
             'quiet': False,
             'no_warnings': False,
             'progress_hooks': [self._progress_hook],
+            'socket_timeout': settings.DOWNLOAD_TIMEOUT_SECONDS,  # 5 minutes
         }
         
         # Add audio extraction post-processor if needed

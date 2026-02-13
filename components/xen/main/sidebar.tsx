@@ -189,34 +189,25 @@ export default function Sidebar() {
                 href="/dashboard"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 flex-1"
+                className="flex items-center gap-2"
               >
                 <Image
-                  src="https://xen.com/logo.svg"
+                  src="/images/logo.png"
                   alt="Logo"
-                  width={24}
-                  height={24}
-                  className="flex-shrink-0 hidden dark:block"
+                  width={100}
+                  height={32}
+                  className="flex-shrink-0 rounded-lg"
                 />
-                <Image
-                  src="https://xen.com/logo-black.svg"
-                  alt="Logo"
-                  width={24}
-                  height={24}
-                  className="flex-shrink-0 block dark:hidden"
-                />
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                  xen
-                </span>
+                
               </Link>
             )}
             {!isSidebarExpanded && (
               <Image
-                src="https://xen.com/logo.svg"
+                src="/images/logo.png"
                 alt="Logo"
-                width={20}
-                height={20}
-                className="flex-shrink-0 hidden dark:block mx-auto"
+                width={28}
+                height={28}
+                className="flex-shrink-0 mx-auto rounded-lg"
               />
             )}
             <button

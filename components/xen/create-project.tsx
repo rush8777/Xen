@@ -1,6 +1,6 @@
 "use client"
 
-import { X, Upload, FolderOpen, ChevronDown } from "lucide-react"
+import { X, Grid3x3, Plus } from "lucide-react"
 
 import React, { useState, useEffect, useRef, DragEvent, useCallback, ChangeEvent } from "react"
 
@@ -8,7 +8,11 @@ import { useRouter } from "next/navigation"
 
 import { MultiStepLoader } from "@/components/ui/multi-step-loader"
 
+import { cn } from "@/lib/utils"
+
 import { useSidebarContext } from "./main/layout"
+
+import Masonry from "react-masonry-css"
 
 
 
@@ -96,6 +100,14 @@ interface LibraryVideo {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 
+// Masonry breakpoint configuration
+const breakpointColumns = {
+  default: 4,
+  1100: 4,
+  900: 3,
+  600: 2,
+}
+
 // CreateProjectModal component
 export default function CreateProjectModal({
   isOpen,
@@ -119,13 +131,13 @@ export default function CreateProjectModal({
   })
 
   const [isDragging, setIsDragging] = useState(false)
-  const [modalSize, setModalSize] = useState<'max-w-sm' | 'max-w-md' | 'max-w-2xl' | 'max-w-3xl' | 'max-w-4xl'>('max-w-md')
+  const [modalSize, setModalSize] = useState<'max-w-sm' | 'max-w-md' | 'max-w-2xl' | 'max-w-3xl' | 'max-w-4xl' | 'max-w-6xl'>('max-w-6xl')
   const [videos, setVideos] = useState<LibraryVideo[]>([])
   const [filteredVideos, setFilteredVideos] = useState<LibraryVideo[]>([])
   const [videosLoading, setVideosLoading] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState<LibraryVideo | null>(null)
   const { isSidebarExpanded } = useSidebarContext()
-  const [isPlatformDropdownOpen, setIsPlatformDropdownOpen] = useState(false)
+  const [activeFilter, setActiveFilter] = useState("All Platforms")
   const [selectedPlatform, setSelectedPlatform] = useState("youtube")
 
   // Initialization states
@@ -174,7 +186,6 @@ export default function CreateProjectModal({
           if (data?.project_id) {
             router.push(`/streamline?projectId=${encodeURIComponent(String(data.project_id))}`)
           }
-          // Keep loader visible across navigation; Streamline page will turn it off on mount.
           setJobId(null)
         }
       } catch {
@@ -189,6 +200,33 @@ export default function CreateProjectModal({
   }, [API_BASE_URL, isInitializing, jobId, router])
 
   const platforms = ["youtube", "facebook", "instagram", "tiktok", "twitter", "linkedin"]
+
+  const platformFilters = [
+    "All Platforms",
+    "Instagram",
+    "Facebook",
+    "Youtube",
+    "LinkedIn",
+    "TikTok",
+  ]
+
+  const filterToPlatform = useCallback((filter: string) => {
+    switch (filter) {
+      case "Instagram":
+        return "instagram"
+      case "Facebook":
+        return "facebook"
+      case "Youtube":
+        return "youtube"
+      case "LinkedIn":
+        return "linkedin"
+      case "TikTok":
+        return "tiktok"
+      case "All Platforms":
+      default:
+        return "youtube"
+    }
+  }, [])
 
   const loadVideosForPlatform = useCallback(async (platform: string) => {
     setVideosLoading(true)
@@ -216,7 +254,7 @@ export default function CreateProjectModal({
           durationText: item.duration_text || item.durationText || '',
           statsText: item.stats_text || '',
           thumbnail: item.thumbnail || item.thumbnail_url || 'https://via.placeholder.com/400x225?text=Video',
-          platform: item.platform || platform, // Use API platform or selected platform
+          platform: item.platform || platform,
           url: item.url || '',
         }
         
@@ -235,37 +273,20 @@ export default function CreateProjectModal({
     }
   }, [API_BASE_URL])
 
-  const handlePlatformSelect = (platform: string) => {
-    setSelectedPlatform(platform)
-    setIsPlatformDropdownOpen(false)
-  }
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (isPlatformDropdownOpen) {
-        const target = event.target as Element
-        if (!target.closest('.platform-dropdown')) {
-          setIsPlatformDropdownOpen(false)
-        }
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isPlatformDropdownOpen])
+  const handleFilterSelect = useCallback((filter: string) => {
+    setActiveFilter(filter)
+    setSelectedPlatform(filterToPlatform(filter))
+  }, [filterToPlatform])
 
   // Handle sidebar resize and modal sizing
   useEffect(() => {
     const updateModalSize = () => {
-      // Get actual sidebar width from CSS variables or use estimates
-      const sidebarWidth = isSidebarExpanded ? 224 : 64 // More accurate sidebar widths (w-56 = 14rem = 224px, w-16 = 4rem = 64px)
-      const padding = 32 // Account for modal padding
+      const sidebarWidth = isSidebarExpanded ? 224 : 64
+      const padding = 32
       const availableWidth = window.innerWidth - sidebarWidth - padding
       
       console.log('Sidebar state:', { isSidebarExpanded, sidebarWidth, availableWidth, windowWidth: window.innerWidth })
       
-      // Set modal size based on available width
       if (availableWidth < 640) {
         setModalSize('max-w-sm')
       } else if (availableWidth < 768) {
@@ -274,16 +295,17 @@ export default function CreateProjectModal({
         setModalSize('max-w-2xl')
       } else if (availableWidth < 1280) {
         setModalSize('max-w-3xl')
-      } else {
+      } else if (availableWidth < 1536) {
         setModalSize('max-w-4xl')
+      } else {
+        setModalSize('max-w-6xl')
       }
     }
 
     updateModalSize()
     window.addEventListener('resize', updateModalSize)
     
-    // Also update when sidebar state changes
-    const timer = setTimeout(updateModalSize, 100) // Small delay for CSS transition
+    const timer = setTimeout(updateModalSize, 100)
     
     return () => {
       window.removeEventListener('resize', updateModalSize)
@@ -305,7 +327,6 @@ export default function CreateProjectModal({
       return
     }
     
-    // Start initialization
     setIsInitializing(true)
     setInitError(null)
     
@@ -335,8 +356,6 @@ export default function CreateProjectModal({
       console.error('yt-dlp initialization error:', err)
       setInitError(err.message || 'Failed to initialize video')
       setIsInitializing(false)
-    } finally {
-      // keep initializing true; polling effect will stop it when completed/failed
     }
   }
 
@@ -345,8 +364,6 @@ export default function CreateProjectModal({
   const handleSaveDraft = () => {
 
     console.log("Draft saved:", formData)
-
-    // Add your draft save logic here
 
     onClose()
 
@@ -418,11 +435,12 @@ export default function CreateProjectModal({
         onClick={onClose}
       />
 
-      {/* Modal - Always show import content */}
+      {/* Modal Content (Explore UI) */}
 
-      <div className={`relative w-full max-h-[85vh] p-3 rounded-lg bg-white dark:bg-zinc-900/70 border border-zinc-100 dark:border-zinc-800 shadow-sm backdrop-blur-xl flex flex-col transition-all duration-500 ease-in-out ${modalSize} z-10 transform will-change-auto animate-in zoom-in-95 duration-500`} style={{
-        transition: 'all 0.5s cubic-bezier(0.4, 0.0, 0.2, 1)',
-      }}>
+      <div
+        className="relative w-[95%] max-w-[1300px] h-[90vh] bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-800 overflow-hidden z-10"
+        style={{ transition: 'all 0.5s cubic-bezier(0.4, 0.0, 0.2, 1)' }}
+      >
 
         {/* Initialization Overlay */}
         {!useGlobalLoader && isInitializing && (
@@ -449,322 +467,189 @@ export default function CreateProjectModal({
           </div>
         )}
 
-        {/* Header */}
-
-        <div className="flex items-start justify-between p-4 pb-2 flex-shrink-0 transition-all duration-300 ease-in-out">
-
-          <div className="flex items-start gap-2.5 transition-all duration-300 ease-in-out">
-
-            <div className="p-1.5 bg-[#3A3A3E] rounded-lg transition-all duration-300 ease-in-out hover:bg-[#4A4A4E] hover:scale-105 transform">
-
-              <FolderOpen className="w-4 h-4 text-white transition-colors duration-300" />
-
-            </div>
-
-            <div className="flex-1 transition-all duration-300 ease-in-out">
-
-              <h2 className="text-lg font-bold text-white mb-0.5 transition-all duration-300 ease-in-out">
-
-                Create New {course?.label || 'Project'}
-
-              </h2>
-
-              <p className="text-[11px] text-gray-400 transition-all duration-300 ease-in-out">
-
-                Create a project to structure your team's workflow.
-
-              </p>
-
-            </div>
-
-          </div>
-
-          {/* Close Button - Top Right */}
-
-          <button
-
-            type="button"
-
-            onClick={onClose}
-
-            className="p-1.5 hover:bg-[#4A4A4E] rounded-lg transition-all duration-300 ease-in-out hover:scale-110 transform"
-
-          >
-
-            <X className="w-4 h-4 text-gray-400 hover:text-white transition-all duration-300 ease-in-out" />
-
-          </button>
-
-        </div>
-
-
-
-        {/* Form */}
-
-        <div className="flex flex-col flex-1 min-h-0">
-
-          {/* Project Name & Category - Fixed */}
-
-          <div className="px-4 pb-3 flex-shrink-0">
-
-            <div className="grid grid-cols-2 gap-2">
-
-              <div>
-
-                <label className="block text-[11px] font-medium text-white mb-1">
-
-                  Project name<span className="text-red-500">*</span>
-
-                </label>
-
-                <input
-
-                  type="text"
-
-                  placeholder="Type here"
-
-                  value={formData.projectName}
-
-                  onChange={(e) => setFormData({ ...formData, projectName: e.target.value })}
-
-                  className="w-full px-2.5 py-1.5 text-xs bg-[#3A3A3E] border border-[#4A4A4E] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all duration-300 ease-in-out hover:border-[#5A5A5E]"
-
-                  required
-
-                />
-
-              </div>
-
-              <div>
-
-                <label className="block text-[11px] font-medium text-white mb-1">
-
-                  Project category<span className="text-red-500">*</span>
-
-                </label>
-
-                <div className="relative">
-
-                  <select
-
-                    value={formData.category}
-
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-
-                    className="w-full px-2.5 py-1.5 text-xs bg-[#3A3A3E] border border-[#4A4A4E] rounded-lg text-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all duration-300 ease-in-out appearance-none cursor-pointer hover:border-[#5A5A5E]"
-
-                    required
-
-                  >
-
-                    <option value="">Choose category</option>
-
-                    <option value="UI/UX Design">UI/UX Design</option>
-
-                    <option value="Branding">Branding</option>
-
-                    <option value="Front End">Front End</option>
-
-                    <option value="Marketing">Marketing</option>
-
-                    <option value="Photography">Photography</option>
-
-                  </select>
-
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-
+        <form id="project-form" onSubmit={handleSubmit} className="h-full max-h-[85vh] overflow-hidden">
+          <div className="max-w-[1400px] mx-auto px-4 py-4">
+            {/* Header (Explore 1:1) */}
+            <div className="mb-4">
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <h1 className="text-2xl font-bold text-white mb-1">Explore</h1>
+                  <p className="text-zinc-400 text-xs">
+                    This is where your content lives. Discover what's ready to post, spark new ideas and keep your strategy moving forward.
+                  </p>
                 </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-
-
-          {/* Scrollable Content Area */}
-
-          <form id="project-form" onSubmit={handleSubmit} className="px-4 space-y-3 flex-1 overflow-y-auto min-h-0">
-
-            {/* Import Content - Always show */}
-
-            <div className="flex flex-col h-full -mx-4 animate-in fade-in slide-in-from-left-5 duration-300">
-
-              {/* Header - Fixed */}
-
-              <div className="flex-shrink-0 px-4 pb-3">
-
-                <label className="block text-[11px] font-medium text-white mb-0.5">
-
-                  Import from Library
-
-                </label>
-
-                <p className="text-[10px] text-gray-400">
-
-                  Select videos from your content library to import. {filteredVideos.length} videos found
-
-                </p>
-
-              </div>
-              
-              {/* Filter Bar */}
-
-              <div className="flex-shrink-0 px-4 pb-3">
-
                 <div className="flex items-center gap-2">
-
-                  <div className="relative platform-dropdown">
-                    <button 
-                      type="button"
-                      onClick={() => setIsPlatformDropdownOpen(!isPlatformDropdownOpen)}
-                      className="px-2.5 py-1.5 text-[10px] bg-[#35353A] border border-[#4A4A4E] rounded-lg text-white hover:bg-[#3A3A3E] transition-all duration-300 ease-in-out flex items-center gap-1.5 hover:scale-105 transform hover:border-[#5A5A5E]"
-                    >
-                      {selectedPlatform}
-                      <ChevronDown className="w-3 h-3 transition-transform duration-300" />
-                    </button>
-
-                    {/* Dropdown Menu */}
-                    {isPlatformDropdownOpen && (
-                      <div className="absolute top-full left-0 mt-1 w-40 bg-[#35353A] border border-[#4A4A4E] rounded-lg shadow-lg z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                        {platforms.map((platform) => (
-                          <button
-                            key={platform}
-                            type="button"
-                            onClick={() => handlePlatformSelect(platform)}
-                            className="w-full px-3 py-2 text-[10px] text-left text-white hover:bg-[#4A4A4E] transition-all duration-200 ease-in-out first:rounded-t-lg last:rounded-b-lg hover:translate-x-1 transform"
-                          >
-                            {platform}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <button 
+                  <button
                     type="button"
-                    className="px-2.5 py-1.5 text-[10px] bg-[#35353A] border border-[#4A4A4E] rounded-lg text-white hover:bg-[#3A3A3E] transition-all duration-300 ease-in-out flex items-center gap-1.5 hover:scale-105 transform hover:border-[#5A5A5E]"
+                    className="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors"
                   >
-                    Filters
+                    <Grid3x3 className="w-3 h-3" />
+                    Action Hub
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!selectedVideo?.url}
+                    className="px-3 py-1 bg-white hover:bg-gray-100 text-black rounded-lg text-xs font-medium flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Create Project
                   </button>
                 </div>
               </div>
-              
-              {/* Video Grid - Scrollable */}
+            </div>
 
-              <div className="flex-1 overflow-y-auto px-4 pb-2">
-
-                <div className="grid grid-cols-4 gap-3">
-
-                  {videosLoading && (
-                    <div className="col-span-4 text-center text-xs text-gray-400 py-6">
-                      Loading your videos...
-                    </div>
+            {/* Platform Filters (Explore 1:1) */}
+            <div className="mb-4 flex items-center gap-1 flex-wrap">
+              {platformFilters.map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => handleFilterSelect(filter)}
+                  className={cn(
+                    "px-3 py-1 rounded-full text-xs font-medium transition-all",
+                    activeFilter === filter
+                      ? "bg-white text-black"
+                      : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-800"
                   )}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
 
-                  {!videosLoading && filteredVideos.length === 0 && (
-                    <div className="col-span-4 text-center text-xs text-gray-400 py-6">
-                      No videos found for {selectedPlatform}
-                    </div>
-                  )}
+            {/* Masonry Video Grid */}
+            <div className="overflow-y-auto pr-1" style={{ maxHeight: "calc(85vh - 140px)" }}>
+              {videosLoading && (
+                <div className="text-center text-xs text-gray-400 py-6">
+                  Loading your videos...
+                </div>
+              )}
 
-                  {!videosLoading && filteredVideos.map((video, index) => (
-                    <div 
+              {!videosLoading && filteredVideos.length === 0 && (
+                <div className="text-center text-xs text-gray-400 py-6">
+                  No videos found for {selectedPlatform}
+                </div>
+              )}
+
+              {!videosLoading && filteredVideos.length > 0 && (
+                <Masonry
+                  breakpointCols={breakpointColumns}
+                  className="flex -ml-4 w-auto"
+                  columnClassName="pl-4 bg-clip-padding"
+                >
+                  {filteredVideos.map((video, index) => (
+                    <div
                       key={video.id || index}
-                      className={
-                        "group cursor-pointer animate-in fade-in zoom-in-95 duration-500 " +
-                        (selectedVideo?.id === video.id ? "ring-2 ring-purple-500 rounded-lg" : "")
-                      }
-                      style={{ animationDelay: `${index * 50}ms` }}
-                      onClick={() => setSelectedVideo(video)}
+                      className="mb-4"
                     >
-                      {/* Thumbnail */}
+                      <div
+                        className={cn(
+                          "group cursor-pointer animate-in fade-in zoom-in-95 duration-500 rounded-2xl overflow-hidden bg-zinc-900 border transition-all",
+                          selectedVideo?.id === video.id 
+                            ? "ring-2 ring-purple-500 border-purple-500" 
+                            : "border-zinc-800 hover:border-zinc-700"
+                        )}
+                        style={{ animationDelay: `${index * 50}ms` }}
+                        onClick={() => setSelectedVideo(video)}
+                      >
+                        {/* Video Thumbnail */}
+                        <div className="relative w-full bg-[#3A3A3E] transition-all duration-300 ease-in-out group-hover:shadow-lg group-hover:shadow-purple-500/20">
+                          <img
+                            src={video.thumbnail}
+                            alt={video.title}
+                            className="w-full h-auto object-cover transition-all duration-500 ease-out group-hover:scale-105"
+                            loading="lazy"
+                          />
 
-                      <div className="relative aspect-video rounded-lg overflow-hidden mb-1.5 bg-[#3A3A3E] transition-all duration-300 ease-in-out group-hover:shadow-lg group-hover:shadow-purple-500/20">
+                          {/* Duration Badge */}
+                          {video.durationText && (
+                            <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-semibold transition-all duration-300 group-hover:bg-black/90">
+                              {video.durationText}
+                            </div>
+                          )}
 
-                        <img 
-                          src={video.thumbnail} 
-                          alt={video.title}
-                          className="w-full h-full object-cover transition-all duration-500 ease-out group-hover:scale-110"
-                        />
-
-                        {/* Duration Badge */}
-
-                        <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-semibold transition-all duration-300 group-hover:bg-black/90">
-
-                          {video.durationText}
-
+                          {/* Hover Overlay */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 ease-out flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedVideo(video)
+                              }}
+                              className="px-3 py-1.5 bg-white text-black text-[10px] font-semibold rounded-md hover:bg-gray-100 transition-all duration-300 transform translate-y-3 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 hover:scale-105"
+                            >
+                              Select
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Hover Overlay */}
+                        {/* Post Meta Information */}
+                        <div className="p-3 bg-zinc-900">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-medium text-white capitalize">{video.platform}</span>
+                            <span className="text-zinc-600">•</span>
+                            <span className="text-xs text-zinc-400">Post</span>
+                          </div>
+                          
+                          <h3 className="font-semibold text-white mb-1 text-sm line-clamp-2">{video.title}</h3>
+                          <p className="text-xs text-zinc-400 line-clamp-2 mb-3">
+                            {video.channel} • {video.viewsText} • {video.timeText}
+                          </p>
 
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 ease-out flex items-center justify-center">
-
-                          <button 
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setSelectedVideo(video)
-                            }}
-                            className="px-3 py-1.5 bg-white text-black text-[10px] font-semibold rounded-md hover:bg-gray-100 transition-all duration-300 transform translate-y-3 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 hover:scale-105"
-                          >
-                            Select
-                          </button>
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-1">
+                            <button 
+                              type="button"
+                              className="flex-1 px-3 py-1 bg-white hover:bg-gray-100 text-black rounded-lg text-xs font-medium transition-colors"
+                            >
+                              Smart Schedule
+                            </button>
+                            <button 
+                              type="button"
+                              className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-lg text-xs font-medium transition-colors"
+                            >
+                              Post Now
+                            </button>
+                            <button 
+                              type="button"
+                              className="p-1 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-lg transition-colors"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                            <button 
+                              type="button"
+                              className="p-1 bg-zinc-800 hover:bg-zinc-700 text-white border border-zinc-700 rounded-lg transition-colors"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                       
-
-                      {/* Video Info */}
-
-                      <div className="space-y-0.5 transition-all duration-300 group-hover:translate-y-0.5">
-
-                        <h3 className="text-[11px] text-white font-medium line-clamp-2 leading-tight transition-all duration-300 group-hover:text-purple-400">
-
-                          {video.title}
-
-                        </h3>
-
-                        <p className="text-[9px] text-gray-400 transition-all duration-300 group-hover:text-gray-300">
-
-                          {video.channel} • {video.viewsText} • {video.timeText}
-
-                        </p>
-
-                        <p className="text-[8px] text-gray-500 transition-all duration-300 group-hover:text-gray-400">
-
-                          {video.statsText}
-
-                        </p>
-
-                      </div>
-
                     </div>
                   ))}
-                </div>
-              </div>
+                </Masonry>
+              )}
             </div>
-          </form>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between p-4 pt-2 border-t border-zinc-800 flex-shrink-0 transition-all duration-300 ease-in-out">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white hover:bg-[#4A4A4E] rounded-lg transition-all duration-300 ease-in-out hover:scale-105 transform"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="project-form"
-            disabled={!selectedVideo?.url}
-            className="px-4 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-all duration-300 ease-in-out flex items-center gap-1.5 hover:scale-105 transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-          >
-            Create Project
-          </button>
-        </div>
+          </div>
+        </form>
       </div>
+
+      {/* Global Masonry Styles */}
+      <style jsx global>{`
+        .masonry-grid {
+          display: flex;
+          margin-left: -16px;
+          width: auto;
+        }
+        .masonry-grid_column {
+          padding-left: 16px;
+          background-clip: padding-box;
+        }
+      `}</style>
     </div>
   )
 }

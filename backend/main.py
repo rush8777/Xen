@@ -16,6 +16,7 @@ from .models import *  # Import all models to register them with SQLAlchemy
 
 from .routers import oauth, connections, videos, analysis, projects, chats
 from .routers import project_statistics
+from .routers import project_overview
 
 
 
@@ -68,6 +69,8 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
 
     app.include_router(project_statistics.router)
+
+    app.include_router(project_overview.router)
 
     app.include_router(chats.router)
 
