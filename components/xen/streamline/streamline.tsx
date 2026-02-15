@@ -5,6 +5,9 @@ import { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { useGlobalLoader } from "@/components/xen/main/layout"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+
 import {
   MessageCircle,
   FileText,
@@ -28,22 +31,22 @@ import ChatMessage from "@/components/xen/chat/chatmassegeui"
 import ChatInput from "@/components/xen/chat/chatinputui"
 import EmotionalIntensityGraph from "@/components/xen/streamline/statistics-components/emotional-anal"
 
- type ProjectOverview = {
-   project_id: number
-   blog_markdown: string
-   summary: string
-   insights: {
-     situation?: string
-     pain?: string[]
-     impact?: string[]
-     critical_event?: string
-     decision?: string
-     [key: string]: any
-   }
-   generated_at: string | null
-   version: number
-   status: "not_started" | "pending" | "completed" | "failed" | string
- }
+type ProjectOverview = {
+  project_id: number
+  blog_markdown: string
+  summary: string
+  insights: {
+    situation?: string
+    pain?: string[]
+    impact?: string[]
+    critical_event?: string
+    decision?: string
+    [key: string]: any
+  }
+  generated_at: string | null
+  version: number
+  status: "not_started" | "pending" | "completed" | "failed" | string
+}
 
 const Skeleton = ({ className }: { className?: string }) => {
   return <div className={cn("animate-pulse rounded-md", className)} />
@@ -242,9 +245,9 @@ export default function Streamline() {
   const [resolvedVideoLink, setResolvedVideoLink] = useState<string>(forwardedVideoUrl || currentProject.videoLink)
   const [isProjectLoading, setIsProjectLoading] = useState<boolean>(!!projectId)
 
-   const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
-   const [overviewError, setOverviewError] = useState<string | null>(null)
-   const [isOverviewLoading, setIsOverviewLoading] = useState<boolean>(false)
+  const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
+  const [overviewError, setOverviewError] = useState<string | null>(null)
+  const [isOverviewLoading, setIsOverviewLoading] = useState<boolean>(false)
 
   useEffect(() => {
     const run = async () => {
@@ -281,46 +284,46 @@ export default function Streamline() {
     run()
   }, [projectId, forwardedVideoUrl])
 
-   useEffect(() => {
-     if (!projectId) return
+  useEffect(() => {
+    if (!projectId) return
 
-     let cancelled = false
-     let pollTimer: ReturnType<typeof setTimeout> | null = null
+    let cancelled = false
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
 
-     const fetchOverview = async () => {
-       if (cancelled) return
-       setIsOverviewLoading(true)
-       setOverviewError(null)
-       try {
-         const res = await fetch(
-           `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/overview`,
-           { cache: "no-store" }
-         )
-         if (!res.ok) {
-           throw new Error(`Failed to load overview (${res.status})`)
-         }
-         const data = (await res.json()) as ProjectOverview
-         if (cancelled) return
-         setProjectOverview(data)
+    const fetchOverview = async () => {
+      if (cancelled) return
+      setIsOverviewLoading(true)
+      setOverviewError(null)
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/overview`,
+          { cache: "no-store" }
+        )
+        if (!res.ok) {
+          throw new Error(`Failed to load overview (${res.status})`)
+        }
+        const data = (await res.json()) as ProjectOverview
+        if (cancelled) return
+        setProjectOverview(data)
 
-         if (data?.status === "pending" || data?.status === "not_started") {
-           pollTimer = setTimeout(fetchOverview, 2000)
-         }
-       } catch (e: any) {
-         if (cancelled) return
-         setOverviewError(e?.message || "Failed to load overview")
-       } finally {
-         if (!cancelled) setIsOverviewLoading(false)
-       }
-     }
+        if (data?.status === "pending" || data?.status === "not_started") {
+          pollTimer = setTimeout(fetchOverview, 2000)
+        }
+      } catch (e: any) {
+        if (cancelled) return
+        setOverviewError(e?.message || "Failed to load overview")
+      } finally {
+        if (!cancelled) setIsOverviewLoading(false)
+      }
+    }
 
-     fetchOverview()
+    fetchOverview()
 
-     return () => {
-       cancelled = true
-       if (pollTimer) clearTimeout(pollTimer)
-     }
-   }, [projectId])
+    return () => {
+      cancelled = true
+      if (pollTimer) clearTimeout(pollTimer)
+    }
+  }, [projectId])
 
   const [isDark, setIsDark] = useState(true)
   const [activeTab, setActiveTab] = useState("transcript")
@@ -329,7 +332,178 @@ export default function Streamline() {
     { id: 1, content: "Hi! I'm your AI video editor assistant. How can I help you edit this video today?", isUser: false },
   ])
 
-  // yt-dlp initialization states - REMOVED, now handled in create-project
+  const placeholderMarkdown = `# Taxing Laughter: The Joke Tax Chronicles\n\nOnce upon a time, in a far-off land, there was a very lazy king who spent all day lounging on his throne. One day, his advisors came to him with a problem: the kingdom was running out of money.\n`
+
+  const blogMarkdown = (projectOverview?.blog_markdown || "").trim() || placeholderMarkdown
+
+  const { blogTitle, blogBodyMarkdown } = React.useMemo(() => {
+    const md = blogMarkdown.trim()
+    const h1Match = md.match(/^#\s+(.+)\s*\n+/)
+    if (!h1Match) {
+      return { blogTitle: "", blogBodyMarkdown: md }
+    }
+    const title = h1Match[1].trim()
+    const body = md.slice(h1Match[0].length).trimStart()
+    return { blogTitle: title, blogBodyMarkdown: body }
+  }, [blogMarkdown])
+
+  const markdownComponents = React.useMemo(() => {
+    return {
+      h1: (props: any) => (
+        <h1
+          {...props}
+          className={cn(
+            "scroll-m-20 text-4xl font-extrabold tracking-tight text-balance",
+            isDark ? "text-white" : "text-gray-900",
+            props?.className
+          )}
+        />
+      ),
+      h2: (props: any) => (
+        <h2
+          {...props}
+          className={cn(
+            "mt-10 scroll-m-20 border-b pb-2 text-2xl font-semibold tracking-tight first:mt-0",
+            isDark ? "text-white border-zinc-800" : "text-gray-900 border-gray-200",
+            props?.className
+          )}
+        />
+      ),
+      h3: (props: any) => (
+        <h3
+          {...props}
+          className={cn(
+            "mt-8 scroll-m-20 text-xl font-semibold tracking-tight",
+            isDark ? "text-white" : "text-gray-900",
+            props?.className
+          )}
+        />
+      ),
+      p: (props: any) => (
+        <p
+          {...props}
+          className={cn(
+            "leading-7 [&:not(:first-child)]:mt-6",
+            isDark ? "text-zinc-300" : "text-gray-600",
+            props?.className
+          )}
+        />
+      ),
+      a: (props: any) => (
+        <a
+          {...props}
+          className={cn(
+            "font-medium underline underline-offset-4",
+            isDark ? "text-purple-400 hover:text-purple-300" : "text-purple-600 hover:text-purple-700",
+            props?.className
+          )}
+          target={props?.target || "_blank"}
+          rel={props?.rel || "noopener noreferrer"}
+        />
+      ),
+      blockquote: (props: any) => (
+        <blockquote
+          {...props}
+          className={cn(
+            "mt-6 border-l-2 pl-6 italic",
+            isDark ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600",
+            props?.className
+          )}
+        />
+      ),
+      ul: (props: any) => (
+        <ul
+          {...props}
+          className={cn(
+            "my-6 ml-6 list-disc [&>li]:mt-2",
+            isDark ? "text-zinc-300" : "text-gray-600",
+            props?.className
+          )}
+        />
+      ),
+      ol: (props: any) => (
+        <ol
+          {...props}
+          className={cn(
+            "my-6 ml-6 list-decimal [&>li]:mt-2",
+            isDark ? "text-zinc-300" : "text-gray-600",
+            props?.className
+          )}
+        />
+      ),
+      hr: (props: any) => (
+        <hr
+          {...props}
+          className={cn(
+            "my-8",
+            isDark ? "border-zinc-800" : "border-gray-200",
+            props?.className
+          )}
+        />
+      ),
+      table: (props: any) => (
+        <div className="my-6 w-full overflow-x-auto">
+          <table
+            {...props}
+            className={cn(
+              "w-full text-sm",
+              isDark ? "text-zinc-300" : "text-gray-700",
+              props?.className
+            )}
+          />
+        </div>
+      ),
+      thead: (props: any) => (
+        <thead
+          {...props}
+          className={cn(
+            isDark ? "border-b border-zinc-800" : "border-b border-gray-200",
+            props?.className
+          )}
+        />
+      ),
+      th: (props: any) => (
+        <th
+          {...props}
+          className={cn(
+            "px-3 py-2 text-left font-semibold",
+            isDark ? "text-white" : "text-gray-900",
+            props?.className
+          )}
+        />
+      ),
+      td: (props: any) => (
+        <td
+          {...props}
+          className={cn(
+            "px-3 py-2 align-top",
+            isDark ? "border-b border-zinc-800" : "border-b border-gray-200",
+            props?.className
+          )}
+        />
+      ),
+      code: (props: any) => (
+        <code
+          {...props}
+          className={cn(
+            "rounded px-1.5 py-0.5 font-mono text-[0.85em]",
+            isDark ? "bg-zinc-800 text-zinc-100" : "bg-gray-100 text-gray-900",
+            props?.className
+          )}
+        />
+      ),
+      pre: (props: any) => (
+        <pre
+          {...props}
+          className={cn(
+            "my-6 overflow-x-auto rounded-lg p-4",
+            isDark ? "bg-zinc-900 border border-zinc-800" : "bg-gray-50 border border-gray-200",
+            props?.className
+          )}
+        />
+      ),
+    }
+  }, [isDark])
 
   const handleSendMessage = (message: string) => {
     // Add user message
@@ -568,62 +742,17 @@ export default function Streamline() {
 
               {/* Typography Content */}
               <div>
-                <h1 className={cn("scroll-m-20 text-4xl font-extrabold tracking-tight text-balance", isDark ? "text-white" : "text-gray-900")}>
-                  Taxing Laughter: The Joke Tax Chronicles
-                </h1>
-                <p className={cn("text-xl leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-400" : "text-gray-500")}>
-                  Once upon a time, in a far-off land, there was a very lazy king who
-                  spent all day lounging on his throne. One day, his advisors came to him
-                  with a problem: the kingdom was running out of money.
-                </p>
-                <h2 className={cn("mt-10 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight transition-colors first:mt-0", isDark ? "text-white border-zinc-800" : "text-gray-900 border-gray-200")}>
-                  The King&apos;s Plan
-                </h2>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  The king thought long and hard, and finally came up with{" "}
-                  <a
-                    href="#"
-                    className="text-purple-500 font-medium underline underline-offset-4"
-                  >
-                    a brilliant plan
-                  </a>
-                  : he would tax the jokes in the kingdom.
-                </p>
-                <blockquote className={cn("mt-6 border-l-2 pl-6 italic", isDark ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600")}>
-                  &quot;After all,&quot; he said, &quot;everyone enjoys a good joke, so
-                  it&apos;s only fair that they should pay for the privilege.&quot;
-                </blockquote>
-                <h3 className={cn("mt-8 scroll-m-20 text-2xl font-semibold tracking-tight", isDark ? "text-white" : "text-gray-900")}>
-                  The Joke Tax
-                </h3>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  The king&apos;s subjects were not amused. They grumbled and complained,
-                  but the king was firm:
-                </p>
-                <ul className={cn("my-6 ml-6 list-disc [&>li]:mt-2", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  <li>1st level of puns: 5 gold coins</li>
-                  <li>2nd level of jokes: 10 gold coins</li>
-                  <li>3rd level of one-liners : 20 gold coins</li>
-                </ul>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  As a result, people stopped telling jokes, and the kingdom fell into a
-                  gloom. But there was one person who refused to let the king&apos;s
-                  foolishness get him down: a court jester named Jokester.
-                </p>
-                <h3 className={cn("mt-8 scroll-m-20 text-2xl font-semibold tracking-tight", isDark ? "text-white" : "text-gray-900")}>
-                  Jokester&apos;s Revolt
-                </h3>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  Jokester began sneaking into the castle in the middle of the night and
-                  leaving jokes all over the place: under the king&apos;s pillow, in his
-                  soup, even in the royal toilet. The king was furious, but he
-                  couldn&apos;t seem to stop Jokester.
-                </p>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  And then, one day, the people of the kingdom discovered that the jokes
-                  left by Jokester were so funny that they couldn&apos;t help but laugh.
-                  And once they started laughing, they couldn&apos;t stop.
-                </p>
+                {blogTitle && (
+                  <h1 className={cn("scroll-m-20 text-4xl font-extrabold tracking-tight text-balance", isDark ? "text-white" : "text-gray-900")}>
+                    {blogTitle}
+                  </h1>
+                )}
+
+                <div className={cn("mt-6 max-w-3xl", isDark ? "text-zinc-300" : "text-gray-600")}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {blogBodyMarkdown}
+                  </ReactMarkdown>
+                </div>
               </div>
             </div>
 
