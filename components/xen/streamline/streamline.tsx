@@ -5,6 +5,8 @@ import { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { useGlobalLoader } from "@/components/xen/main/layout"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import {
   MessageCircle,
   FileText,
@@ -28,22 +30,22 @@ import ChatMessage from "@/components/xen/chat/chatmassegeui"
 import ChatInput from "@/components/xen/chat/chatinputui"
 import EmotionalIntensityGraph from "@/components/xen/streamline/statistics-components/emotional-anal"
 
- type ProjectOverview = {
-   project_id: number
-   blog_markdown: string
-   summary: string
-   insights: {
-     situation?: string
-     pain?: string[]
-     impact?: string[]
-     critical_event?: string
-     decision?: string
-     [key: string]: any
-   }
-   generated_at: string | null
-   version: number
-   status: "not_started" | "pending" | "completed" | "failed" | string
- }
+type ProjectOverview = {
+  project_id: number
+  blog_markdown: string
+  summary: string
+  insights: {
+    situation?: string
+    pain?: string[]
+    impact?: string[]
+    critical_event?: string
+    decision?: string
+    [key: string]: any
+  }
+  generated_at: string | null
+  version: number
+  status: "not_started" | "pending" | "completed" | "failed" | string
+}
 
 const Skeleton = ({ className }: { className?: string }) => {
   return <div className={cn("animate-pulse rounded-md", className)} />
@@ -242,9 +244,9 @@ export default function Streamline() {
   const [resolvedVideoLink, setResolvedVideoLink] = useState<string>(forwardedVideoUrl || currentProject.videoLink)
   const [isProjectLoading, setIsProjectLoading] = useState<boolean>(!!projectId)
 
-   const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
-   const [overviewError, setOverviewError] = useState<string | null>(null)
-   const [isOverviewLoading, setIsOverviewLoading] = useState<boolean>(false)
+  const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
+  const [overviewError, setOverviewError] = useState<string | null>(null)
+  const [isOverviewLoading, setIsOverviewLoading] = useState<boolean>(false)
 
   useEffect(() => {
     const run = async () => {
@@ -281,46 +283,46 @@ export default function Streamline() {
     run()
   }, [projectId, forwardedVideoUrl])
 
-   useEffect(() => {
-     if (!projectId) return
+  useEffect(() => {
+    if (!projectId) return
 
-     let cancelled = false
-     let pollTimer: ReturnType<typeof setTimeout> | null = null
+    let cancelled = false
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
 
-     const fetchOverview = async () => {
-       if (cancelled) return
-       setIsOverviewLoading(true)
-       setOverviewError(null)
-       try {
-         const res = await fetch(
-           `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/overview`,
-           { cache: "no-store" }
-         )
-         if (!res.ok) {
-           throw new Error(`Failed to load overview (${res.status})`)
-         }
-         const data = (await res.json()) as ProjectOverview
-         if (cancelled) return
-         setProjectOverview(data)
+    const fetchOverview = async () => {
+      if (cancelled) return
+      setIsOverviewLoading(true)
+      setOverviewError(null)
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/overview`,
+          { cache: "no-store" }
+        )
+        if (!res.ok) {
+          throw new Error(`Failed to load overview (${res.status})`)
+        }
+        const data = (await res.json()) as ProjectOverview
+        if (cancelled) return
+        setProjectOverview(data)
 
-         if (data?.status === "pending" || data?.status === "not_started") {
-           pollTimer = setTimeout(fetchOverview, 2000)
-         }
-       } catch (e: any) {
-         if (cancelled) return
-         setOverviewError(e?.message || "Failed to load overview")
-       } finally {
-         if (!cancelled) setIsOverviewLoading(false)
-       }
-     }
+        if (data?.status === "pending" || data?.status === "not_started") {
+          pollTimer = setTimeout(fetchOverview, 2000)
+        }
+      } catch (e: any) {
+        if (cancelled) return
+        setOverviewError(e?.message || "Failed to load overview")
+      } finally {
+        if (!cancelled) setIsOverviewLoading(false)
+      }
+    }
 
-     fetchOverview()
+    fetchOverview()
 
-     return () => {
-       cancelled = true
-       if (pollTimer) clearTimeout(pollTimer)
-     }
-   }, [projectId])
+    return () => {
+      cancelled = true
+      if (pollTimer) clearTimeout(pollTimer)
+    }
+  }, [projectId])
 
   const [isDark, setIsDark] = useState(true)
   const [activeTab, setActiveTab] = useState("transcript")
@@ -329,12 +331,25 @@ export default function Streamline() {
     { id: 1, content: "Hi! I'm your AI video editor assistant. How can I help you edit this video today?", isUser: false },
   ])
 
-  // yt-dlp initialization states - REMOVED, now handled in create-project
+  const placeholderMarkdown = `# Taxing Laughter: The Joke Tax Chronicles\n\nOnce upon a time, in a far-off land, there was a very lazy king who spent all day lounging on his throne. One day, his advisors came to him with a problem: the kingdom was running out of money.\n\n## The King's Plan\n\nThe king thought long and hard, and finally came up with a brilliant plan: he would tax the jokes in the kingdom.\n\n> "After all," he said, "everyone enjoys a good joke, so it's only fair that they should pay for the privilege."\n\n### The Joke Tax\n\nThe king's subjects were not amused. They grumbled and complained, but the king was firm:\n\n- 1st level of puns: 5 gold coins\n- 2nd level of jokes: 10 gold coins\n- 3rd level of one-liners : 20 gold coins\n\nAs a result, people stopped telling jokes, and the kingdom fell into a gloom. But there was one person who refused to let the king's foolishness get him down: a court jester named Jokester.\n\n### Jokester's Revolt\n\nJokester began sneaking into the castle in the middle of the night and leaving jokes all over the place: under the king's pillow, in his soup, even in the royal toilet. The king was furious, but he couldn't seem to stop Jokester.\n\nAnd then, one day, the people of the kingdom discovered that the jokes left by Jokester were so funny that they couldn't help but laugh. And once they started laughing, they couldn't stop.\n`
+
+  const blogMarkdown = (projectOverview?.blog_markdown || "").trim() || placeholderMarkdown
+
+  const { blogTitle, blogBodyMarkdown } = React.useMemo(() => {
+    const md = blogMarkdown.trim()
+    const h1Match = md.match(/^#\s+(.+)\s*\n+/)
+    if (!h1Match) {
+      return { blogTitle: "", blogBodyMarkdown: md }
+    }
+    const title = h1Match[1].trim()
+    const body = md.slice(h1Match[0].length).trimStart()
+    return { blogTitle: title, blogBodyMarkdown: body }
+  }, [blogMarkdown])
 
   const handleSendMessage = (message: string) => {
     // Add user message
     setEditorMessages(prev => [...prev, { id: Date.now(), content: message, isUser: true }])
-    
+
     // Simulate AI response
     setTimeout(() => {
       setEditorMessages(prev => [...prev, { 
@@ -355,283 +370,39 @@ export default function Streamline() {
 
           <>
 
-        {/* Header */}
-        <div className="mb-8 space-y-4">
-          {activeTopTab === "overview" ? (
-            // Original header for statistics tab
-            <>
-              <div className="flex items-center justify-between">
-                <h1 className={cn("text-2xl font-bold", isDark ? "text-white" : "text-gray-900")}>
-                  GreenLeaf // Basepoint
-                </h1>
+            {/* Header */}
+            <div className="mb-8 space-y-4">
+              {activeTopTab === "overview" ? (
+                // Original header for statistics tab
+                <>
+                  <div className="flex items-center justify-between">
+                    <h1 className={cn("text-2xl font-bold", isDark ? "text-white" : "text-gray-900")}>
+                      GreenLeaf // Basepoint
+                    </h1>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    className={cn(
-                      "px-3 py-1 text-xs font-medium rounded transition-colors",
-                      isDark
-                        ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                        : "bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200"
-                    )}
-                  >
-                    ★
-                  </button>
-
-                  <button
-                    onClick={() => setIsDark(!isDark)}
-                    className={cn(
-                      "p-1.5 rounded-lg transition-colors",
-                      isDark
-                        ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
-                        : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
-                    )}
-                  >
-                    {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className={cn("flex items-center gap-4 text-sm", isDark ? "text-zinc-400" : "text-gray-500")}>
-                <div className="flex items-center gap-1">
-                  <Calendar className="h-4 w-4" />
-                  <span>{currentProject?.lastModified}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
-                  <span>{currentProject?.duration}</span>
-                </div>
-              </div>
-            </>
-          ) : (
-            // Video info card for all other tabs
-            <div className="flex items-center justify-between">
-              <div className={cn(
-                "flex items-center gap-4 px-4 py-3 rounded-xl",
-                isDark ? "bg-zinc-900/50 border border-zinc-800" : "bg-white border border-gray-200"
-              )}>
-                {/* Video Thumbnail */}
-                <div className="relative w-32 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-black">
-                  <img
-                    src={currentProject.thumbnail}
-                    alt="Video thumbnail"
-                    className="w-full h-full object-cover"
-                  />
-                  
-                </div>
-
-                {/* Video Info */}
-                <div className="flex flex-col gap-1">
-                  <h2 className={cn("text-base font-semibold", isDark ? "text-white" : "text-gray-900")}>
-                    Video
-                  </h2>
-                  <a 
-                    href={resolvedVideoLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={cn(
-                      "text-sm hover:underline",
-                      isDark ? "text-zinc-400 hover:text-zinc-300" : "text-gray-600 hover:text-gray-700"
-                    )}
-                  >
-                    {resolvedVideoLink}
-                  </a>
-                  <button
-                    className={cn(
-                      "text-xs text-left hover:underline w-fit",
-                      isDark ? "text-zinc-500 hover:text-zinc-400" : "text-gray-500 hover:text-gray-600"
-                    )}
-                  >
-                    Rename
-                  </button>
-                </div>
-              </div>
-
-              {/* Right side: star + theme toggle */}
-              <div className="flex items-center gap-2">
-                <button
-                  className={cn(
-                    "px-3 py-1 text-xs font-medium rounded transition-colors",
-                    isDark
-                      ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                      : "bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200"
-                  )}
-                >
-                  ★
-                </button>
-
-                <button
-                  onClick={() => setIsDark(!isDark)}
-                  className={cn(
-                    "p-1.5 rounded-lg transition-colors",
-                    isDark
-                      ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
-                      : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
-                  )}
-                >
-                  {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="mb-8 flex justify-center">
-          <div className={cn("inline-flex items-center gap-1.5 p-1 rounded-lg", isDark ? "bg-transparent" : "bg-gray-100")}>
-            {toptabs.map((toptab) => {
-              const Icon = toptab.icon
-              const isActive = activeTopTab === toptab.id
-              return (
-                <button
-                  key={toptab.id}
-                  onClick={() => setActiveTopTab(toptab.id)}
-                  className={cn(
-                    "px-3 py-2 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap",
-                    isActive
-                      ? isDark
-                        ? "bg-zinc-800 text-white shadow-lg"
-                        : "bg-white text-gray-900 shadow"
-                      : isDark
-                        ? "text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50"
-                        : "text-gray-500 hover:text-gray-700 hover:bg-gray-200"
-                  )}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {toptab.label}
-                  {toptab.badge && (
-                    <span className={cn(
-                      "ml-0.5 px-1.5 py-0.5 text-[10px] rounded-md font-semibold",
-                      isDark ? "bg-purple-500/30 text-purple-300" : "bg-purple-100 text-purple-600"
-                    )}>
-                      {toptab.badge}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Main Content */}
-        {activeTopTab === "statistics" ? (
-          <div className="lg:col-span-5">
-            <VideoAnalytics />
-          </div>
-        ) : (
-          /* Original Video Chat View */
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-            {/* Left & Center */}
-            <div className="lg:col-span-3 space-y-6">
-
-              {/* Video Player */}
-              <Card className={cn("overflow-hidden", isDark ? "border-zinc-800 bg-zinc-900/50" : "border-gray-200 bg-white")}>
-                <div className="aspect-video bg-black relative group">
-                  <img
-                    src="/images/design-mode/Screenshot%202025-05-08%20133020(1).png"
-                    alt="Video"
-                    className="w-full h-full object-cover"
-                  />
-                  {/* Hover play overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-                    <button className="p-3 rounded-full bg-white/20 hover:bg-white/30 text-white">
-                      <Play className="h-6 w-6" />
-                    </button>
-                  </div>
-                  {/* Controls bar */}
-                  <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black via-black/50 to-transparent">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="text-xs text-zinc-400">09:18</span>
-                      <div className="flex-1 h-1 bg-zinc-700 rounded-full overflow-hidden">
-                        <div className="h-full w-1/3 bg-purple-600" />
-                      </div>
-                      <span className="text-xs text-zinc-400">28:14</span>
-                    </div>
                     <div className="flex items-center gap-2">
-                      <button className="p-1 hover:bg-white/10 rounded text-white">
-                        <Play className="h-4 w-4" />
+                      <button
+                        className={cn(
+                          "px-3 py-1 text-xs font-medium rounded transition-colors",
+                          isDark
+                            ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                            : "bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200"
+                        )}
+                      >
+                        ★
                       </button>
-                      <button className="p-1 hover:bg-white/10 rounded text-white">
-                        <Volume2 className="h-4 w-4" />
+
+                      <button
+                        onClick={() => setIsDark(!isDark)}
+                        className={cn(
+                          "p-1.5 rounded-lg transition-colors",
+                          isDark
+                            ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
+                            : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
+                        )}
+                      >
+                        {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                       </button>
-                      <button className="p-1 hover:bg-white/10 rounded text-white ml-auto">
-                        <Settings2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Lower Tabs */}
-              <div className={cn("flex items-center gap-6 px-0 border-b", isDark ? "border-zinc-800" : "border-gray-200")}>
-                {/* Tabs removed */}
-              </div>
-
-              {/* Typography Content */}
-              <div>
-                <h1 className={cn("scroll-m-20 text-4xl font-extrabold tracking-tight text-balance", isDark ? "text-white" : "text-gray-900")}>
-                  Taxing Laughter: The Joke Tax Chronicles
-                </h1>
-                <p className={cn("text-xl leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-400" : "text-gray-500")}>
-                  Once upon a time, in a far-off land, there was a very lazy king who
-                  spent all day lounging on his throne. One day, his advisors came to him
-                  with a problem: the kingdom was running out of money.
-                </p>
-                <h2 className={cn("mt-10 scroll-m-20 border-b pb-2 text-3xl font-semibold tracking-tight transition-colors first:mt-0", isDark ? "text-white border-zinc-800" : "text-gray-900 border-gray-200")}>
-                  The King&apos;s Plan
-                </h2>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  The king thought long and hard, and finally came up with{" "}
-                  <a
-                    href="#"
-                    className="text-purple-500 font-medium underline underline-offset-4"
-                  >
-                    a brilliant plan
-                  </a>
-                  : he would tax the jokes in the kingdom.
-                </p>
-                <blockquote className={cn("mt-6 border-l-2 pl-6 italic", isDark ? "border-zinc-700 text-zinc-400" : "border-gray-300 text-gray-600")}>
-                  &quot;After all,&quot; he said, &quot;everyone enjoys a good joke, so
-                  it&apos;s only fair that they should pay for the privilege.&quot;
-                </blockquote>
-                <h3 className={cn("mt-8 scroll-m-20 text-2xl font-semibold tracking-tight", isDark ? "text-white" : "text-gray-900")}>
-                  The Joke Tax
-                </h3>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  The king&apos;s subjects were not amused. They grumbled and complained,
-                  but the king was firm:
-                </p>
-                <ul className={cn("my-6 ml-6 list-disc [&>li]:mt-2", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  <li>1st level of puns: 5 gold coins</li>
-                  <li>2nd level of jokes: 10 gold coins</li>
-                  <li>3rd level of one-liners : 20 gold coins</li>
-                </ul>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  As a result, people stopped telling jokes, and the kingdom fell into a
-                  gloom. But there was one person who refused to let the king&apos;s
-                  foolishness get him down: a court jester named Jokester.
-                </p>
-                <h3 className={cn("mt-8 scroll-m-20 text-2xl font-semibold tracking-tight", isDark ? "text-white" : "text-gray-900")}>
-                  Jokester&apos;s Revolt
-                </h3>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  Jokester began sneaking into the castle in the middle of the night and
-                  leaving jokes all over the place: under the king&apos;s pillow, in his
-                  soup, even in the royal toilet. The king was furious, but he
-                  couldn&apos;t seem to stop Jokester.
-                </p>
-                <p className={cn("leading-7 [&:not(:first-child)]:mt-6", isDark ? "text-zinc-300" : "text-gray-600")}>
-                  And then, one day, the people of the kingdom discovered that the jokes
-                  left by Jokester were so funny that they couldn&apos;t help but laugh.
-                  And once they started laughing, they couldn&apos;t stop.
-                </p>
-              </div>
-            </div>
-
-            {/* Right Sidebar */}
-            <div className="lg:col-span-2 space-y-6">
-
-              {/* Summary Card */}
-              <Card className={cn(isDark ? "border-zinc-800 bg-zinc-900/50" : "border-gray-200 bg-white")}>
                 <CardContent className="pt-6">
                   <h2 className={cn("text-sm font-semibold mb-3", isDark ? "text-white" : "text-gray-900")}>
                     {(projectOverview?.summary || insights.summary) && "Summary"}

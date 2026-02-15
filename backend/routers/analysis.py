@@ -269,7 +269,24 @@ async def analyze_from_url(
 
             # 3) Gemini analysis
             _set_progress(job_id_, step=3, text="Running Gemini analysis")
-            analyzer_job_id = video_analyzer.create_job(tmp_file)
+            platform = None
+            platform_published_date = None
+            if comments_data and isinstance(comments_data.get("video_info"), dict):
+                video_info = comments_data["video_info"]
+                platform = video_info.get("platform")
+                platform_published_date = (
+                    video_info.get("upload_date")
+                    or video_info.get("release_date")
+                    or video_info.get("timestamp")
+                )
+
+            analyzer_job_id = video_analyzer.create_job(
+                tmp_file,
+                platform=platform,
+                video_url=url,
+                model=None,
+                platform_published_date=str(platform_published_date) if platform_published_date is not None else None,
+            )
             output_path = await video_analyzer.analyze_job(analyzer_job_id)
 
             # Get gemini_file_uri if available

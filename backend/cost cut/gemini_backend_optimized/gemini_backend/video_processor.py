@@ -2,9 +2,8 @@ import cv2
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 from typing import List, Tuple
-from urllib.parse import parse_qs, urlparse
-
 from . import config
 
 
@@ -112,6 +111,7 @@ async def save_descriptions(
     output_filename: str | None = None,
 ):
     """Save descriptions to output file"""
+
     if output_filename:
         output_path = config.OUTPUT_DIR / output_filename
     else:

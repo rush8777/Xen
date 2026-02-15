@@ -3,21 +3,20 @@
 import React, { useState, useEffect, useCallback } from "react"
 
 import {
-  BarChart2,
-  Building2,
-  Folder,
-  Users2,
-  Boxes,
-  MessagesSquare,
-  Video,
+  LayoutDashboard,
+  FolderOpen,
+  Link2,
+  MessageSquare,
   Settings,
   HelpCircle,
-  Menu,
-  ChevronLeft,
+  Search,
+  Plus,
   ChevronDown,
+  Clock,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react"
 
-import { Home } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { useSidebarContext } from "./layout"
@@ -45,11 +44,11 @@ interface RecentChat {
 }
 
 export default function Sidebar() {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isRecentsOpen, setIsRecentsOpen] = useState(true)
   const { isSidebarExpanded, setIsSidebarExpanded } = useSidebarContext()
   const [recentChats, setRecentChats] = useState<RecentChat[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const formatTimeAgo = useCallback((dateString: string) => {
     const date = new Date(dateString)
@@ -120,30 +119,37 @@ export default function Sidebar() {
     }
   }, [loadRecentProjects])
 
-  function handleNavigation() {
-    setIsMobileMenuOpen(false)
-  }
-
   function NavItem({
     href,
     icon: Icon,
     children,
+    badge,
   }: {
     href: string
     icon: any
     children: React.ReactNode
+    badge?: string
   }) {
     return (
       <Link
         href={href}
-        onClick={handleNavigation}
-        className={`flex items-center rounded-md transition-colors text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-[#1F1F23] ${
-          isSidebarExpanded ? "px-2 py-1 justify-start" : "px-2 py-1 justify-center"
+        className={`group flex items-center gap-1 rounded-lg transition-all duration-200 ${
+          isSidebarExpanded 
+            ? "px-2 py-2 hover:bg-white/5" 
+            : "px-2 py-2 justify-center hover:bg-white/5"
         }`}
-        title={isSidebarExpanded ? "" : children?.toString()}
       >
-        <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-        {isSidebarExpanded && <span className="ml-2 text-xs">{children}</span>}
+        <Icon className="h-3 w-3 text-zinc-400 group-hover:text-white transition-colors" />
+        {isSidebarExpanded && (
+          <span className="text-xs font-medium text-zinc-300 group-hover:text-white transition-colors flex-1">
+            {children}
+          </span>
+        )}
+        {isSidebarExpanded && badge && (
+          <span className="px-1 py-0.5 text-[10px] font-semibold bg-zinc-800 text-zinc-300 rounded-full">
+            {badge}
+          </span>
+        )}
       </Link>
     )
   }
@@ -152,150 +158,194 @@ export default function Sidebar() {
     return (
       <Link
         href={`/chat/${chat.id}`}
-        onClick={handleNavigation}
-        className={`flex items-center gap-2 rounded-md transition-colors text-gray-400 dark:text-gray-400 hover:text-gray-100 dark:hover:text-gray-100 hover:bg-gray-50 dark:hover:bg-[#1F1F23] ${
-          isSidebarExpanded ? "px-2 py-1.5" : "px-2 py-1.5 justify-center"
+        className={`group flex items-center gap-2 rounded-lg transition-all duration-200 ${
+          isSidebarExpanded 
+            ? "px-2 py-1.5 hover:bg-white/5" 
+            : "px-2 py-1.5 justify-center hover:bg-white/5"
         }`}
         title={chat.name}
       >
+        <div className="h-1 w-1 rounded-full bg-zinc-600 flex-shrink-0" />
         {isSidebarExpanded && (
-          <span className="text-xs truncate flex-1">{chat.name}</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-zinc-400 group-hover:text-white truncate transition-colors">
+              {chat.name}
+            </p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">{chat.updatedAt}</p>
+          </div>
         )}
       </Link>
     )
   }
 
   return (
-    <>
-      <button
-        type="button"
-        className="lg:hidden fixed top-4 left-4 z-[70] p-2 rounded-lg bg-white dark:bg-[#0F0F12] shadow-md"
-        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-      >
-        <Menu className="h-5 w-5 text-gray-600 dark:text-gray-300" />
-      </button>
-      <nav
-        className={`
-                fixed inset-y-0 left-0 z-[70] bg-white dark:bg-[#0F0F12] transform transition-all duration-200 ease-in-out
-                lg:translate-x-0 lg:static border-r border-gray-200 dark:border-[#1F1F23]
-                ${isMobileMenuOpen ? "translate-x-0 w-56" : "-translate-x-full w-56"}
-                ${isSidebarExpanded ? "lg:w-56" : "lg:w-16"}
-            `}
-      >
-        <div className="h-full flex flex-col">
-          <div className={`flex items-center justify-between border-b border-gray-200 dark:border-[#1F1F23] ${isSidebarExpanded ? "h-12 px-4" : "h-12 px-2"}`}>
-            {isSidebarExpanded && (
-              <Link
-                href="/dashboard"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2"
-              >
-                <Image
-                  src="/images/logo.png"
-                  alt="Logo"
-                  width={100}
-                  height={32}
-                  className="flex-shrink-0 rounded-lg"
-                />
-                
-              </Link>
-            )}
-            {!isSidebarExpanded && (
-              <Image
-                src="/images/logo.png"
-                alt="Logo"
-                width={28}
-                height={28}
-                className="flex-shrink-0 mx-auto rounded-lg"
-              />
-            )}
-            <button
-              onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
-              className="p-1 hover:bg-gray-100 dark:hover:bg-[#1F1F23] rounded-md transition-colors text-gray-600 dark:text-gray-400 hidden lg:flex flex-shrink-0"
-            >
-              <ChevronLeft className={`h-3.5 w-3.5 transition-transform ${!isSidebarExpanded ? "rotate-180" : ""}`} />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto py-3">
-            <div className={`space-y-4 ${isSidebarExpanded ? "px-3" : "px-2"}`}>
-              <div>
-                {isSidebarExpanded && (
-                  <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    Overview
-                  </div>
-                )}
-                <div className={`space-y-0.5 ${!isSidebarExpanded ? "space-y-3" : ""}`}>
-                  <NavItem href="/dashboard" icon={Home}>
-                    Home
-                  </NavItem>
-                  <NavItem href="/library" icon={Building2}>
-                    Library
-                  </NavItem>
-                  <NavItem href="/project" icon={Folder}>
-                    Projects
-                  </NavItem>
-                  <NavItem href="/connections" icon={Boxes}>
-                    Connections
-                  </NavItem>
-                  
-                </div>
-              </div>
-
-              {/* Recents Section */}
-              <div>
-                {isSidebarExpanded ? (
-                  <button
-                    onClick={() => setIsRecentsOpen(!isRecentsOpen)}
-                    className="w-full flex items-center justify-between px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-                  >
-                    <span>Recents</span>
-                    <ChevronDown
-                      className={`h-3 w-3 transition-transform ${
-                        !isRecentsOpen ? "-rotate-90" : ""
-                      }`}
-                    />
-                  </button>
-                ) : null}
-                {isRecentsOpen && (
-                  <div className={`space-y-0.5 ${!isSidebarExpanded ? "space-y-3" : ""}`}>
-                    {isLoading ? (
-                      <div className="px-2 py-1.5">
-                        <div className="w-full h-3 bg-gray-200 dark:bg-gray-700 rounded animate-pulse"></div>
-                      </div>
-                    ) : (
-                      recentChats.map((chat) => (
-                        <RecentChatItem key={chat.id} chat={chat} />
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-
+    <aside
+      className={`fixed left-0 top-0 bottom-0 bg-zinc-950 border-r border-zinc-800/50 transition-all duration-300 ease-in-out z-40 flex flex-col ${
+        isSidebarExpanded ? "w-60" : "w-16"
+      }`}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between h-10 px-2 border-b border-zinc-800/50">
+        {isSidebarExpanded ? (
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <div className="h-5 w-5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <span className="text-white font-bold text-xs">SC</span>
             </div>
+            <div>
+              <h2 className="text-xs font-semibold text-white">SocialCraft</h2>
+              <p className="text-[10px] text-zinc-500">Dashboard</p>
+            </div>
+          </Link>
+        ) : (
+          <div className="h-5 w-5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto">
+            <span className="text-white font-bold text-xs">SC</span>
+          </div>
+        )}
+        
+        {isSidebarExpanded && (
+          <button
+            onClick={() => setIsSidebarExpanded(false)}
+            className="p-1 hover:bg-zinc-800 rounded-lg transition-colors text-zinc-400 hover:text-white"
+          >
+            <PanelLeftClose className="h-2.5 w-2.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Search Bar */}
+      {isSidebarExpanded && (
+        <div className="px-3 py-2 border-b border-zinc-800/50">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-zinc-500" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-7 pr-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Expand Button (collapsed state) */}
+      {!isSidebarExpanded && (
+        <div className="px-3 py-2 border-b border-zinc-800/50">
+          <button
+            onClick={() => setIsSidebarExpanded(true)}
+            className="w-full p-1.5 hover:bg-zinc-800 rounded-lg transition-colors text-zinc-400 hover:text-white"
+          >
+            <PanelLeft className="h-3.5 w-3.5 mx-auto" />
+          </button>
+        </div>
+      )}
+
+      {/* Navigation */}
+      <div className="flex-1 overflow-y-auto py-2">
+        <div className="px-1.5 space-y-3">
+          {/* Main Navigation */}
+          <div className="space-y-1">
+            {isSidebarExpanded && (
+              <h3 className="px-2 mb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                Main Menu
+              </h3>
+            )}
+            <NavItem href="/dashboard" icon={LayoutDashboard}>
+              Dashboard
+            </NavItem>
+            <NavItem href="/library" icon={FolderOpen}>
+              Library
+            </NavItem>
+            <NavItem href="/project" icon={MessageSquare} badge="3">
+              Projects
+            </NavItem>
+            <NavItem href="/connections" icon={Link2}>
+              Connections
+            </NavItem>
           </div>
 
-          <div className={`border-t border-gray-200 dark:border-[#1F1F23] ${isSidebarExpanded ? "px-3 py-3" : "px-2 py-3"}`}>
-            <div className={`space-y-0.5 ${!isSidebarExpanded ? "space-y-3" : ""}`}>
-              <NavItem href="#" icon={Settings}>
-                Settings
-              </NavItem>
-              <NavItem href="#" icon={HelpCircle}>
-                Help
-              </NavItem>
+          {/* Recents Section */}
+          <div className="space-y-1">
+            {isSidebarExpanded ? (
+              <button
+                onClick={() => setIsRecentsOpen(!isRecentsOpen)}
+                className="w-full flex items-center justify-between px-2 mb-1 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider hover:text-zinc-400 transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-2.5 w-2.5" />
+                  Recent
+                </span>
+                <ChevronDown
+                  className={`h-3 w-3 transition-transform duration-200 ${
+                    !isRecentsOpen ? "-rotate-90" : ""
+                  }`}
+                />
+              </button>
+            ) : (
+              <div className="px-2 mb-1">
+                <Clock className="h-3 w-3 text-zinc-500 mx-auto" />
+              </div>
+            )}
+
+            {isRecentsOpen && (
+              <div className="space-y-0.5">
+                {isLoading ? (
+                  <>
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="px-2 py-1">
+                        <div className="h-2.5 bg-zinc-800/50 rounded animate-pulse"></div>
+                      </div>
+                    ))}
+                  </>
+                ) : recentChats.length > 0 ? (
+                  recentChats.map((chat) => (
+                    <RecentChatItem key={chat.id} chat={chat} />
+                  ))
+                ) : (
+                  isSidebarExpanded && (
+                    <p className="px-2 py-1 text-[10px] text-zinc-600">No recent projects</p>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* New Project Button */}
+      {isSidebarExpanded && (
+        <div className="px-3 py-2 border-t border-zinc-800/50">
+          <button className="w-full flex items-center justify-center gap-1 px-2 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-lg font-medium text-xs transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30">
+            <Plus className="h-3 w-3" />
+            New Project
+          </button>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="px-2 py-1.5 border-t border-zinc-800/50 space-y-1">
+        <NavItem href="#" icon={Settings}>
+          Settings
+        </NavItem>
+        <NavItem href="#" icon={HelpCircle}>
+          Help & Support
+        </NavItem>
+      </div>
+
+      {/* User Profile */}
+      {isSidebarExpanded && (
+        <div className="px-3 py-2 border-t border-zinc-800/50">
+          <div className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-zinc-800/50 transition-colors cursor-pointer">
+            <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+              <span className="text-white font-semibold text-xs">JD</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-white truncate">John Doe</p>
+              <p className="text-[10px] text-zinc-500 truncate">john@example.com</p>
             </div>
           </div>
         </div>
-      </nav>
-
-      {isMobileMenuOpen && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-[65] lg:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
       )}
-    </>
+    </aside>
   )
 }

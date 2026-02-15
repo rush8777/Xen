@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react"
 import Sidebar from "./sidebar"
-import TopNav from "./top-nav"
 import { useTheme } from "next-themes"
 import { useEffect, useState, createContext, useContext, useMemo } from "react"
 import { MultiStepLoader } from "@/components/ui/multi-step-loader"
@@ -136,33 +135,28 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <SidebarContext.Provider value={{ isSidebarExpanded, setIsSidebarExpanded }}>
-      <GlobalLoaderContext.Provider
-        value={globalLoaderValue}
-      >
-        <div className={`flex h-screen ${theme === "dark" ? "dark" : ""}`}>
+      <GlobalLoaderContext.Provider value={globalLoaderValue}>
+        <div className={`min-h-screen ${theme === "dark" ? "dark" : ""}`}>
           <Sidebar />
-          <div className="w-full flex flex-1 flex-col">
-            <header className="h-12 border-b border-gray-200 dark:border-[#1F1F23]">
-              <TopNav />
-            </header>
-            <main
-              className={`relative overflow-auto flex-1 p-6 bg-white dark:bg-[#0F0F12] ${
-                globalLoading ? "overflow-hidden" : "overflow-auto"
-              }`}
-            >
-              {globalLoading && (
-                <MultiStepLoader
-                  loadingStates={globalLoadingStates}
-                  loading={globalLoading}
-                  duration={1200}
-                  loop={true}
-                  value={globalStep}
-                  overlay="absolute"
-                />
-              )}
-              {children}
-            </main>
-          </div>
+          <main
+            className={`relative min-h-screen p-6 bg-white dark:bg-[#0F0F12] transition-all duration-300 ease-in-out ${
+              isSidebarExpanded ? "ml-60" : "ml-16"
+            } ${globalLoading ? "overflow-hidden" : "overflow-auto"}`}
+          >
+            {children}
+          </main>
+          {globalLoading && (
+            <div className="fixed inset-0 z-50">
+              <MultiStepLoader
+                loadingStates={globalLoadingStates}
+                loading={globalLoading}
+                duration={1200}
+                loop={true}
+                value={globalStep}
+                overlay="fixed"
+              />
+            </div>
+          )}
         </div>
       </GlobalLoaderContext.Provider>
     </SidebarContext.Provider>

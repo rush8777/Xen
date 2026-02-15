@@ -426,12 +426,12 @@ export default function CreateProjectModal({
 
   return (
 
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-300 ease-in-out ${isSidebarExpanded ? 'lg:pl-60' : 'lg:pl-20'}`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ease-in-out">
 
       {/* Backdrop */}
 
       <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-all duration-300 ease-in-out animate-in fade-in duration-300"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-all duration-300 ease-in-out animate-in fade-in duration-300"
         onClick={onClose}
       />
 
@@ -526,8 +526,12 @@ export default function CreateProjectModal({
               )}
 
               {!videosLoading && filteredVideos.length === 0 && (
-                <div className="text-center text-xs text-gray-400 py-6">
-                  No videos found for {selectedPlatform}
+                <div className="flex flex-col items-center justify-center h-full min-h-[400px] py-12">
+                  <img
+                    src="/images/icons/explore_empty_state.png"
+                    alt="No videos found"
+                    className="w-50 h-40 object-cover rounded-lg mb-4 opacity-50"
+                  />
                 </div>
               )}
 

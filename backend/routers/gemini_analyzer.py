@@ -20,14 +20,17 @@ BASE_DIR = (
 
 sys.path.append(os.path.dirname(BASE_DIR))
 
-
-
 # Add gemini-cli to path if needed
 # sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'gemini-cli'))
 
 from ..gemini_backend.cache_manager import cache_manager
 from ..gemini_backend import config
-from ..gemini_backend.video_processor import get_video_duration, generate_timestamps, save_descriptions
+from ..gemini_backend.video_processor import (
+    build_results_filename,
+    generate_timestamps,
+    get_video_duration,
+    save_descriptions,
+)
 from ..gemini_backend.gemini_client import (
     upload_video_to_gemini,
     analyze_video_intervals,
@@ -43,28 +46,36 @@ class VideoAnalyzer:
     Video analyzer for direct integration
     Provides programmatic interface to Gemini video analysis
     """
-    
+
     def __init__(self):
         self.jobs: Dict = {}
-    
-    def create_job(self, video_path: Path) -> str:
+
+    def create_job(
+        self,
+        video_path: Path,
+        *,
+        platform: str | None = None,
+        video_url: str | None = None,
+        model: str | None = None,
+        platform_published_date: str | None = None,
+    ) -> str:
         """
         Create a new analysis job
-        
+
         Args:
             video_path: Path to video file
-            
+
         Returns:
             job_id: Unique identifier for this job
         """
         job_id = str(uuid.uuid4())
-        
+
         # Calculate video hash
         video_hash = cache_manager.calculate_video_hash(video_path)
-        
+
         # Check cache
         cached_entry = cache_manager.get_cached_reference(video_hash)
-        
+
         if cached_entry:
             # Cache hit - use existing reference
             self.jobs[job_id] = {
@@ -75,41 +86,49 @@ class VideoAnalyzer:
                 "video_hash": video_hash,
                 "status": "cached",
                 "cache_hit": bool(cached_entry.get("cached_content_name")),
+                "platform": platform,
+                "video_url": video_url,
+                "model": model,
+                "platform_published_date": platform_published_date,
             }
         else:
             # Cache miss - need to upload
             duration = get_video_duration(video_path)
-            
+
             self.jobs[job_id] = {
                 "filename": video_path.name,
                 "video_path": video_path,
                 "duration": duration,
                 "video_hash": video_hash,
                 "status": "pending_upload",
-                "cache_hit": False
+                "cache_hit": False,
+                "platform": platform,
+                "video_url": video_url,
+                "model": model,
+                "platform_published_date": platform_published_date,
             }
-        
+
         return job_id
-    
+
     async def analyze_job(self, job_id: str) -> Path:
         """
         Analyze a video job
-        
+
         Args:
             job_id: Job identifier from create_job()
-            
+
         Returns:
             output_path: Path to results file
-            
+
         Raises:
             ValueError: If job_id not found
             Exception: If upload or analysis fails
         """
         if job_id not in self.jobs:
             raise ValueError(f"Job ID not found: {job_id}")
-        
+
         job = self.jobs[job_id]
-        
+
         # Upload + create cached content if not cached
         if not job.get("cache_hit", False) or not job.get("cached_content_name"):
             try:
@@ -147,40 +166,46 @@ class VideoAnalyzer:
                     job['filename'],
                     gemini_file_name=video_file.name,
                 )
-                
+
                 job['status'] = "cached"
             except Exception as e:
                 job['status'] = "upload_failed"
                 raise Exception(f"Upload failed: {str(e)}")
-        
+
         # Generate intervals
         intervals = generate_timestamps(job['duration'])
-        
+
         try:
             job['status'] = "analyzing"
-            
+
             # Analyze all intervals concurrently
             descriptions = await analyze_video_intervals(job["cached_content_name"], intervals)
-            
+
             # Save results
-            output_path = await save_descriptions(job_id, descriptions)
-            
+            output_filename = build_results_filename(
+                platform=job.get("platform"),
+                video_url=job.get("video_url"),
+                model=job.get("model") or "models/gemini-2.5-flash",
+                platform_published_date=job.get("platform_published_date"),
+            )
+            output_path = await save_descriptions(job_id, descriptions, output_filename=output_filename)
+
             job['status'] = "completed"
             job['output_path'] = output_path
-            
+
             # Clean up video file after successful analysis
             try:
                 if job['video_path'].exists():
                     job['video_path'].unlink()
             except:
                 pass  # Best effort cleanup
-            
+
             return output_path
-        
+
         except Exception as e:
             job['status'] = "analysis_failed"
             raise Exception(f"Analysis failed: {str(e)}")
-    
+
     def get_job_status(self, job_id: str) -> dict:
         """
         Get status of a job

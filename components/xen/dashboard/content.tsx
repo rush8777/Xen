@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowRight, Filter, ArrowUpDown, Link2, MessageCircle, X, ChevronDown, Play, Image, FileText, Film, Users, MoreHorizontal, Trash2 } from "lucide-react"
+import { ArrowRight, Filter, ArrowUpDown, Link2, MessageCircle, X, ChevronDown, Play, Image, FileText, Film, Users, MoreHorizontal, Trash2, Lightbulb } from "lucide-react"
 import { useState, useRef, useEffect, useCallback } from "react"
 import CreateProjectModal from "@/components/xen/create-project"
 import { Card, CardContent } from "@/components/ui/card"
@@ -17,8 +17,10 @@ import TiktokIcon from "./icons/TiktokIcon"
 interface Course {
   id: number
   label: string
+  description: string
   icon: React.FC<{ className?: string }>
   gradient: string
+  accentColor: string
 }
 
 const initLoadingStates = [
@@ -124,7 +126,7 @@ export default function CoursePage() {
       console.error("Failed to delete project:", e)
       alert("Failed to delete project. Please try again.")
     }
-  }, [API_BASE_URL])
+  }, [])
 
   const platforms = ["Facebook", "Instagram", "Tiktok", "Youtube"]
   const contentTypes = ["Video", "Image", "Post"]
@@ -250,12 +252,49 @@ export default function CoursePage() {
   const activeFilterCount = (selectedPlatform ? 1 : 0) + (selectedContentType ? 1 : 0)
 
   const courses: Course[] = [
-    { id: 1, label: "Videos",  icon: Play,      gradient: "linear-gradient(135deg, #ef4444, #f97316, #eab308, #ef4444)" },
-    { id: 2, label: "Posts",   icon: FileText,  gradient: "linear-gradient(135deg, #22c55e, #14b8a6, #06b6d4, #22c55e)" },
-    { id: 3, label: "Comments",  icon: Image,     gradient: "linear-gradient(135deg, #8b5cf6, #ec4899, #f43f5e, #8b5cf6)" },
-    { id: 4, label: "IdeaGen",  icon: Film,      gradient: "linear-gradient(135deg, #3b82f6, #6366f1, #8b5cf6, #3b82f6)" }
-    
+    { 
+      id: 1, 
+      label: "Videos", 
+      description: "Create engaging video content with AI-powered editing",
+      icon: Play, 
+      gradient: "from-emerald-500/20 to-teal-500/20",
+      accentColor: "emerald"
+    },
+    { 
+      id: 2, 
+      label: "Posts", 
+      description: "Generate compelling social media posts instantly",
+      icon: FileText, 
+      gradient: "from-blue-500/20 to-cyan-500/20",
+      accentColor: "cyan"
+    },
+    { 
+      id: 3, 
+      label: "Comments", 
+      description: "Analyze and respond to comments intelligently",
+      icon: MessageCircle, 
+      gradient: "from-purple-500/20 to-pink-500/20",
+      accentColor: "purple"
+    },
+    { 
+      id: 4, 
+      label: "IdeaGen", 
+      description: "Discover creative ideas for your next campaign",
+      icon: Lightbulb, 
+      gradient: "from-amber-500/20 to-orange-500/20",
+      accentColor: "amber"
+    }
   ]
+
+  const getAccentColorClass = (color: string) => {
+    const colors: Record<string, string> = {
+      emerald: "text-emerald-400 group-hover:text-emerald-300",
+      cyan: "text-cyan-400 group-hover:text-cyan-300",
+      purple: "text-purple-400 group-hover:text-purple-300",
+      amber: "text-amber-400 group-hover:text-amber-300"
+    }
+    return colors[color] || colors.emerald
+  }
 
   const handleCourseClick = (course: Course) => {
     console.log('handleCourseClick called with course:', course)
@@ -364,26 +403,13 @@ function ChatRow({ project, index }: { project: any; index: number }) {
 
   return (
     <div className="space-y-8 min-h-screen bg-gray-50 dark:bg-[#0F0F12] p-6">
-      <style>{`
-        @keyframes gradient-shift {
-          0%   { background-position: 0% 50%; }
-          50%  { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        .card-gradient-bg {
-          background-size: 200% 200%;
-          animation: gradient-shift 6s ease infinite;
-        }
-      `}</style>
       {/* Course Banner */}
-      <div className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-2xl p-8 text-white flex items-center justify-between overflow-hidden relative">
-        <div className="absolute top-0 right-0 opacity-10">
-          <div className="grid grid-cols-4 gap-4">
-            {[...Array(16)].map((_, i) => (
-              <div key={i} className="w-12 h-12 border border-white/30 rounded" />
-            ))}
-          </div>
-        </div>
+      <div className="rounded-2xl p-8 text-white flex items-center justify-between overflow-hidden relative h-48 border border-gray-300">
+        <img
+          src="/images/icons/banner_overlay.png"
+          alt="Course Banner"
+          className="absolute top-0 right-0 h-full w-auto"
+        />
         <div className="relative z-10">
           <p className="text-sm font-semibold tracking-widest text-purple-200 mb-2">ONLINE COURSE</p>
           <h1 className="text-4xl font-bold mb-6">Sharpen Your Skills with<br />Professional Online Courses</h1>
@@ -394,29 +420,99 @@ function ChatRow({ project, index }: { project: any; index: number }) {
         </div>
       </div>
 
-      {/* Course Progress Cards - Clickable */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Course Cards - NEW DESIGN */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {courses.map((course) => {
           const Icon = course.icon
           return (
             <button
               key={course.id}
               onClick={() => handleCourseClick(course)}
-              className="relative overflow-hidden p-5 rounded-lg bg-white dark:bg-[#1F1F23] border border-zinc-100 dark:border-zinc-800 shadow-sm text-left transition-all duration-200 hover:scale-105 hover:shadow-lg active:scale-95 flex flex-col items-center justify-center gap-3"
+              className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] border border-white/5 hover:border-white/10 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50"
             >
-              {/* Animated gradient background */}
-              <div
-                className="card-gradient-bg absolute inset-0 opacity-25 dark:opacity-30"
-                style={{ background: course.gradient }}
-              />
-
-              {/* Icon */}
-              <div className="relative z-10 p-3 rounded-xl bg-white/60 dark:bg-[#2F2F37]/60 backdrop-blur-sm">
-                <Icon className="w-6 h-6 text-zinc-700 dark:text-zinc-300" />
+              {/* Gradient overlay */}
+              <div className={`absolute inset-0 bg-gradient-to-br ${course.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
+              
+              {/* Noise texture overlay */}
+              <div className="absolute inset-0 opacity-[0.015] mix-blend-overlay">
+                <div className="w-full h-full" style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'repeat'
+                }} />
               </div>
 
-              {/* Label */}
-              <p className="relative z-10 text-sm font-semibold text-zinc-900 dark:text-white">{course.label}</p>
+              {/* Content */}
+              <div className="relative p-4 flex flex-col items-start h-full min-h-[150px]">
+                {/* Text content */}
+                <div className="mb-4 space-y-2">
+                  <h3 className="text-lg font-semibold text-white group-hover:text-white/90 transition-colors">
+                    {course.label}
+                  </h3>
+                  <p className="text-xs text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors">
+                    {course.description}
+                  </p>
+                </div>
+
+                {/* Learn more link */}
+                <div className="flex items-center justify-center gap-2 text-xs font-medium">
+                  <span className={getAccentColorClass(course.accentColor)}>
+                    Learn more
+                  </span>
+                  <svg 
+                    className={`w-4 h-4 ${getAccentColorClass(course.accentColor)} transition-transform group-hover:translate-x-1`}
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+
+                {/* Large icon container - takes up bottom portion */}
+                <div className="w-full flex justify-end mt-auto mb-2">
+                  <div className="relative">
+                    {/* Glow effect */}
+                    <div className={`absolute inset-0 ${getAccentColorClass(course.accentColor)} opacity-20 blur-xl rounded-full scale-150`} />
+                    
+                    {/* Icon */}
+                    <div className="relative group-hover:bg-white/10 transition-all duration-500">
+                      {course.label === "Videos" ? (
+                        <img
+                          src="/images/icons/video_icon.png"
+                          alt="Videos"
+                          className="w-16 h-16 transition-colors duration-500"
+                        />
+                      ) : course.label === "Posts" ? (
+                        <img
+                          src="/images/icons/learn_icon.png"
+                          alt="Posts"
+                          className="w-16 h-16 transition-colors duration-500"
+                        />
+                      ) : course.label === "Comments" ? (
+                        <img
+                          src="/images/icons/comment_icon.png"
+                          alt="Comments"
+                          className="w-16 h-16 transition-colors duration-500"
+                        />
+                      ) : course.label === "IdeaGen" ? (
+                        <img
+                          src="/images/icons/bulb.png"
+                          alt="IdeaGen"
+                          className="w-16 h-20 transition-colors duration-500"
+                        />
+                      ) : (
+                        <Icon className={`w-12 h-12 ${getAccentColorClass(course.accentColor)} transition-colors duration-500`} />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom gradient line */}
+                <div className={`absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r ${course.gradient} opacity-50`} />
+              </div>
+
+              {/* Bottom gradient line */}
+              <div className={`absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r ${course.gradient} opacity-50`} />
             </button>
           )
         })}
@@ -433,86 +529,97 @@ function ChatRow({ project, index }: { project: any; index: number }) {
         </div>
 
         {/* Minimalist Project Cards - 4 columns horizontal layout */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {filteredTasks.slice(0, 4).map((project) => (
-            <Link
-              key={project.id}
-              href={`/streamline?projectId=${encodeURIComponent(project.id)}`}
-              className="group block"
-            >
-              <div className="space-y-3">
-                {/* Card with Image */}
-                <div className="relative bg-[#1a1a1a] dark:bg-[#1a1a1a] rounded-xl overflow-hidden border border-gray-800 dark:border-gray-800 hover:border-gray-700 dark:hover:border-gray-700 transition-all">
-                  {/* Floating Badges on Image - Top Left */}
-                  <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-                    <span className={cn("px-2 py-1 rounded-md text-xs font-medium backdrop-blur-sm", getPriorityColor(project.priority))}>
-                      {project.priority}
-                    </span>
-                    <span className={cn("px-2 py-1 rounded-md text-xs font-medium backdrop-blur-sm", getCategoryColor(project.category))}>
-                      {project.category}
-                    </span>
+        {filteredTasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <img
+              src="/images/icons/Recent_project_empty.png"
+              alt="No recent projects"
+              className="w-50 h-40 object-cover rounded-lg mb-4 opacity-50"
+            />
+            <p className="text-sm text-gray-500 dark:text-gray-400">No recent projects</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {filteredTasks.slice(0, 4).map((project) => (
+              <Link
+                key={project.id}
+                href={`/streamline?projectId=${encodeURIComponent(project.id)}`}
+                className="group block"
+              >
+                <div className="space-y-3">
+                  {/* Card with Image */}
+                  <div className="relative bg-[#1a1a1a] dark:bg-[#1a1a1a] rounded-xl overflow-hidden border border-gray-800 dark:border-gray-800 hover:border-gray-700 dark:hover:border-gray-700 transition-all">
+                    {/* Floating Badges on Image - Top Left */}
+                    <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+                      <span className={cn("px-2 py-1 rounded-md text-xs font-medium backdrop-blur-sm", getPriorityColor(project.priority))}>
+                        {project.priority}
+                      </span>
+                      <span className={cn("px-2 py-1 rounded-md text-xs font-medium backdrop-blur-sm", getCategoryColor(project.category))}>
+                        {project.category}
+                      </span>
+                    </div>
+
+                    {/* Project Thumbnail - Full Width */}
+                    <div className="w-full aspect-video bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center overflow-hidden">
+                      {project.thumbnailUrl ? (
+                        <img
+                          src={project.thumbnailUrl}
+                          alt={project.title}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 bg-gray-700/50 rounded-lg flex items-center justify-center">
+                          <Image className="w-16 h-16 object-cover text-gray-500" />
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Project Thumbnail - Full Width */}
-                  <div className="w-full aspect-video bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center overflow-hidden">
-                    {project.thumbnailUrl ? (
-                      <img
-                        src={project.thumbnailUrl}
-                        alt={project.title}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 bg-gray-700/50 rounded-lg flex items-center justify-center">
-                        <Image className="w-8 h-8 text-gray-500" />
-                      </div>
-                    )}
+                  {/* Text Content Outside Card */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 space-y-1">
+                      {/* Title */}
+                      <h3 className="text-sm font-medium text-gray-900 dark:text-white line-clamp-1">
+                        {project.title}
+                      </h3>
+
+                      {/* Time Stamp */}
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {project.id === "1" ? "7d ago" : project.id === "2" ? "55d ago" : "60d ago"}
+                      </p>
+                    </div>
+
+                    {/* Three Dots Menu - Bottom Right */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="p-1 hover:bg-gray-200 dark:hover:bg-[#2F2F37] rounded transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                          type="button"
+                        >
+                          <MoreHorizontal className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" sideOffset={4} className="w-40">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteProject(project.id)
+                          }}
+                          className="text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete project
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
-
-                {/* Text Content Outside Card */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 space-y-1">
-                    {/* Title */}
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-white line-clamp-1">
-                      {project.title}
-                    </h3>
-
-                    {/* Time Stamp */}
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {project.id === "1" ? "7d ago" : project.id === "2" ? "55d ago" : "60d ago"}
-                    </p>
-                  </div>
-
-                  {/* Three Dots Menu - Bottom Right */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="p-1 hover:bg-gray-200 dark:hover:bg-[#2F2F37] rounded transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                        type="button"
-                      >
-                        <MoreHorizontal className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" sideOffset={4} className="w-40">
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDeleteProject(project.id)
-                        }}
-                        className="text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete project
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* My Chats Section */}

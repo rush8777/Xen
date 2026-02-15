@@ -87,7 +87,7 @@ INTERVAL: [MM:SS – MM:SS]
 9. OCCLUSIONS & VISIBILITY LIMITS
 
 SECTION RULES
-**Should contain 200 words for each section**
+**Should contain suitable number of words for each section which best describes the video **
 
 1. CAMERA & FRAME
 

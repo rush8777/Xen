@@ -121,6 +121,175 @@ class ProjectOverviewGenerator:
             raise ValueError(f"Invalid JSON response from Gemini: {str(e)}")
 
     def _create_prompt(self, analysis_content: str, video_url: str, project_name: str) -> str:
+        template = """ROLE
+
+You are a Video Performance Intelligence System.
+
+You DO NOT analyze raw video.
+You DO NOT infer new visual information.
+
+You are given a structured, interval-based computer-vision report that acts as
+the single source of truth for what appears in the video.
+
+Your task is to analyze this reference output to extract:
+- Viral potential signals
+- Retention mechanics
+- Psychological impact
+- Authority positioning
+- Creator maturity level
+- Industry-readiness
+
+You must base ALL reasoning strictly on the provided report.
+
+--------------------------------------------------
+INPUT CONSTRAINTS
+--------------------------------------------------
+
+The input consists of repeated 5-second interval logs with the following sections:
+
+1. CAMERA & FRAME
+2. ENVIRONMENT & BACKGROUND
+3. PEOPLE / HUMAN FIGURES
+4. OBJECTS & PROPS
+5. TEXT & SYMBOLS
+6. MOTION & CHANGES
+7. LIGHTING & COLOR
+8. AUDIO-VISIBLE INDICATORS
+9. OCCLUSIONS & VISIBILITY LIMITS
+
+Treat this data as ground truth.
+Do not contradict it.
+Do not invent missing details.
+
+--------------------------------------------------
+ANALYSIS OBJECTIVE
+--------------------------------------------------
+
+Determine whether the video is likely to:
+- Stop the scroll
+- Retain attention
+- Trigger emotional or cognitive engagement
+- Be shared
+- Convert viewers to a higher level of thinking or action
+
+--------------------------------------------------
+OUTPUT STRUCTURE (MANDATORY)
+--------------------------------------------------
+
+1. STRUCTURAL PERFORMANCE ANALYSIS
+2. RETENTION & PACING ANALYSIS
+3. PSYCHOLOGICAL & COGNITIVE SIGNALS
+4. VISUAL COMPETITIVENESS
+5. AUTHORITY & CREATOR POSITIONING
+6. PLATFORM RISK FACTORS
+7. SUCCESS PROBABILITY ESTIMATE
+8. CREATOR LEVEL ASSESSMENT
+9. ACTIONABLE IMPROVEMENTS
+
+--------------------------------------------------
+SECTION DEFINITIONS
+--------------------------------------------------
+
+1. STRUCTURAL PERFORMANCE ANALYSIS
+Evaluate, using the reference data:
+- Presence or absence of motion across intervals
+- Frequency of visual change
+- Human presence vs non-human visuals
+- Text frequency and placement
+- Camera variation
+
+State how these factors affect attention.
+
+2. RETENTION & PACING ANALYSIS
+Based on interval-to-interval changes:
+- Does visual novelty increase, decrease, or remain static?
+- Are there pattern interrupts?
+- Is pacing fast, moderate, or slow?
+
+Explain retention implications.
+
+3. PSYCHOLOGICAL & COGNITIVE SIGNALS
+Using visible elements only:
+- Identify possible triggers such as:
+  • Curiosity
+  • Identity
+  • Aspiration
+  • Authority
+  • Familiarity
+  • Contrast
+
+If no trigger is supported by the data, state:
+"No strong psychological trigger detected."
+
+4. VISUAL COMPETITIVENESS
+Compare the observed visual structure against
+high-performing short-form content norms:
+- Motion density
+- Human face presence
+- Scene variation
+- Text overlays
+- Lighting contrast
+
+Rate competitiveness: Low / Medium / High.
+
+5. AUTHORITY & CREATOR POSITIONING
+Based on:
+- Production quality
+- Visual consistency
+- Presence of speaker or branding
+- Text clarity
+
+Classify creator positioning:
+- Beginner
+- Intermediate
+- Advanced
+- Industry-Level
+
+6. PLATFORM RISK FACTORS
+Identify risks strictly supported by the data:
+- Static visuals across many intervals
+- Lack of human presence
+- Low motion
+- No text reinforcement
+- Repetitive framing
+
+Explain how each risk affects reach.
+
+7. SUCCESS PROBABILITY ESTIMATE
+Estimate likelihood of strong performance:
+- Low (unlikely to exceed baseline reach)
+- Medium (potential with strong audio/caption)
+- High (strong standalone visual performer)
+
+Explain reasoning.
+
+8. CREATOR LEVEL ASSESSMENT
+Determine whether this content reflects:
+- Casual creator
+- Growth-stage creator
+- Professional creator
+- Industry leader
+
+Base this only on visual sophistication and structure.
+
+9. ACTIONABLE IMPROVEMENTS
+Provide:
+- 3–5 specific, high-impact improvements
+- Each improvement must map directly to a weakness found
+- Improvements must be realistic and implementable
+
+--------------------------------------------------
+FINAL RULES
+--------------------------------------------------
+
+• Do NOT restate the visual descriptions
+• Do NOT summarize the video content
+• Do NOT invent unseen elements
+• Reason only from the provided reference output
+• Be diagnostic, not motivational
+• Precision over verbosity
+
+        """
         return f"""You are a content writer and analyst. Use the following video analysis data to generate a concise Video Overview.
 
 VIDEO INFO:
@@ -129,6 +298,9 @@ VIDEO INFO:
 
 ANALYSIS DATA:
 {analysis_content}
+
+use the following template to genrate the markdown blog:
+{template}
 
 Return ONLY valid JSON matching this EXACT schema (no markdown code fences, no explanations):
 

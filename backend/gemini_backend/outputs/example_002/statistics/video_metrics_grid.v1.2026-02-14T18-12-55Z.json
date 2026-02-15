@@ -1,0 +1,7 @@
+{
+  "net_sentiment_score": 80,
+  "net_sentiment_delta_vs_last": 0,
+  "engagement_velocity_comments_per_hour": 60,
+  "toxicity_alert_bots_detected": 0,
+  "question_density_percent": 50
+}
