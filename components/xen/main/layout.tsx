@@ -6,6 +6,7 @@ import { useTheme } from "next-themes"
 import { useEffect, useState, createContext, useContext, useMemo } from "react"
 import { MultiStepLoader } from "@/components/ui/multi-step-loader"
 import { usePathname } from "next/navigation"
+import CourseCreator from "@/components/CourseCreator"
 
 interface LayoutProps {
   children: ReactNode
@@ -63,6 +64,8 @@ export default function Layout({ children }: LayoutProps) {
     { text: "Creating project" },
     { text: "Opening Streamline" },
   ])
+
+  const [showSurvey, setShowSurvey] = useState(false)
 
   const globalLoaderValue = useMemo<GlobalLoaderContextType>(
     () => ({
@@ -129,6 +132,21 @@ export default function Layout({ children }: LayoutProps) {
     setMounted(true)
   }, [])
 
+  useEffect(() => {
+    if (!mounted) return
+    if (!pathname?.startsWith("/dashboard")) {
+      setShowSurvey(false)
+      return
+    }
+
+    try {
+      const completed = window.localStorage.getItem("xen:welcomeSurveyCompleted")
+      setShowSurvey(!completed)
+    } catch {
+      setShowSurvey(true)
+    }
+  }, [mounted, pathname])
+
   if (!mounted) {
     return null
   }
@@ -141,10 +159,35 @@ export default function Layout({ children }: LayoutProps) {
           <main
             className={`relative min-h-screen p-6 bg-white dark:bg-[#0F0F12] transition-all duration-300 ease-in-out ${
               isSidebarExpanded ? "ml-60" : "ml-16"
-            } ${globalLoading ? "overflow-hidden" : "overflow-auto"}`}
+            } ${globalLoading || showSurvey ? "overflow-hidden" : "overflow-auto"}`}
           >
             {children}
           </main>
+
+          {showSurvey && !globalLoading && (
+            <div className="fixed inset-0 z-50 isolate">
+              <div
+                className="absolute inset-0 z-0 bg-black/40 backdrop-blur-md pointer-events-auto"
+                onClick={() => {
+                  setShowSurvey(false)
+                }}
+              />
+              <div className="absolute inset-0 z-10 flex items-center justify-center p-4 pointer-events-none">
+                <div className="w-full max-w-6xl pointer-events-auto">
+                  <CourseCreator
+                    variant="overlay"
+                    onComplete={() => {
+                      try {
+                        window.localStorage.setItem("xen:welcomeSurveyCompleted", "1")
+                      } catch {}
+                      setShowSurvey(false)
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {globalLoading && (
             <div className="fixed inset-0 z-50">
               <MultiStepLoader
