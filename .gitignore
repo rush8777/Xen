@@ -29,3 +29,12 @@ next-env.d.ts
 
 # backend 
 /backend/venv/
+
+# python cache
+__pycache__/
+backend/__pycache__/
+backend/gemini_backend/__pycache__/
+backend/gemini_backend/outputs/
+*.pyc
+*.pyo
+*.pyd
