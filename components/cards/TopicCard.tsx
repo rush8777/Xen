@@ -13,7 +13,7 @@ const TopicCard = ({ onSubmit, onBack }: TopicCardProps) => {
   const [topic, setTopic] = useState("");
 
   return (
-    <div className="floating-card w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 overflow-hidden bg-zinc-900 border-zinc-800">
+    <div className="floating-card w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 overflow-hidden bg-zinc-900 border-zinc-800 rounded-2xl">
       {/* Left gradient background */}
       <div className="relative m-3 md:m-4 min-h-[300px] rounded-xl overflow-hidden order-2 md:order-1">
         <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 via-zinc-800 to-zinc-900" />
@@ -67,7 +67,7 @@ const TopicCard = ({ onSubmit, onBack }: TopicCardProps) => {
             whileTap={{ scale: 0.98 }}
             onClick={() => topic.trim() && onSubmit(topic.trim())}
             disabled={!topic.trim()}
-            className="inline-flex items-center gap-3 rounded-lg bg-white hover:bg-gray-100 text-black px-6 py-3 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="inline-flex items-center gap-3 rounded-lg bg-white hover:bg-gray-100 text-black px-3 py-1 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Sparkles size={16} /> Generate
           </motion.button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import WelcomeCard from "./cards/WelcomeCard";
 import PurposeCard from "./cards/PurposeCard";
@@ -48,6 +48,23 @@ const CourseCreator = ({ onComplete, variant = "page" }: CourseCreatorProps) => 
     outline: [],
     description: "",
   });
+
+  // Lock body scroll when overlay is active
+  useEffect(() => {
+    if (variant === "overlay") {
+      // Save original styles
+      const originalStyle = window.getComputedStyle(document.body);
+      const originalOverflow = originalStyle.overflow;
+      
+      // Lock scroll
+      document.body.style.overflow = 'hidden';
+      
+      // Cleanup function to restore scroll
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [variant]);
 
   const goNext = () => {
     setDirection(1);
@@ -102,8 +119,8 @@ const CourseCreator = ({ onComplete, variant = "page" }: CourseCreatorProps) => 
     <div
       className={
         variant === "overlay"
-          ? "relative w-full flex items-center justify-center bg-zinc-950 p-4 overflow-hidden rounded-2xl"
-          : "flex min-h-screen items-center justify-center bg-zinc-950 p-4 overflow-hidden"
+          ? "relative w-full flex items-center justify-center p-4 overflow-hidden rounded-2xl"
+          : "flex min-h-screen items-center justify-center p-4 overflow-hidden"
       }
     >
       {/* Subtle background pattern */}

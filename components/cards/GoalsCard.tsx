@@ -29,7 +29,7 @@ const GoalsCard = ({ onSubmit, onBack }: GoalsCardProps) => {
   };
 
   return (
-    <div className="floating-card w-full max-w-5xl p-10 md:p-14 bg-zinc-900 border-zinc-800">
+    <div className="floating-card w-full max-w-5xl p-10 md:p-14 bg-zinc-900 border-zinc-800 rounded-2xl">
       <div className="text-center mb-8">
         <h2 className="text-3xl md:text-4xl font-bold leading-tight text-white mb-3">
           What do you plan
@@ -102,7 +102,7 @@ const GoalsCard = ({ onSubmit, onBack }: GoalsCardProps) => {
           whileTap={{ scale: 0.98 }}
           onClick={() => selected.length > 0 && onSubmit(selected)}
           disabled={selected.length === 0}
-          className="inline-flex items-center gap-3 rounded-lg bg-white hover:bg-gray-100 text-black px-6 py-3 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          className="inline-flex items-center gap-3 rounded-lg bg-white hover:bg-gray-100 text-black px-3 py-1 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Continue <ArrowRight size={16} />
         </motion.button>

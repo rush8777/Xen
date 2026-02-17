@@ -440,15 +440,14 @@ function ChatRow({ project, index }: { project: any; index: number }) {
                   backgroundRepeat: 'repeat'
                 }} />
               </div>
-
               {/* Content */}
               <div className="relative p-4 flex flex-col items-start h-full min-h-[150px]">
                 {/* Text content */}
                 <div className="mb-4 space-y-2">
-                  <h3 className="text-lg font-semibold text-white group-hover:text-white/90 transition-colors">
+                  <h3 className="text-lg font-semibold text-white group-hover:text-white/90">
                     {course.label}
                   </h3>
-                  <p className="text-xs text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors">
+                  <p className="text-xs text-gray-400 leading-relaxed group-hover:text-gray-300">
                     {course.description}
                   </p>
                 </div>
@@ -475,33 +474,33 @@ function ChatRow({ project, index }: { project: any; index: number }) {
                     <div className={`absolute inset-0 ${getAccentColorClass(course.accentColor)} opacity-20 blur-xl rounded-full scale-150`} />
                     
                     {/* Icon */}
-                    <div className="relative group-hover:bg-white/10 transition-all duration-500">
+                    <div className="relative group-hover:bg-white/10">
                       {course.label === "Videos" ? (
                         <img
                           src="/images/icons/video_icon.png"
                           alt="Videos"
-                          className="w-16 h-16 transition-colors duration-500"
+                          className="w-16 h-16"
                         />
                       ) : course.label === "Posts" ? (
                         <img
                           src="/images/icons/learn_icon.png"
                           alt="Posts"
-                          className="w-16 h-16 transition-colors duration-500"
+                          className="w-16 h-16"
                         />
                       ) : course.label === "Comments" ? (
                         <img
                           src="/images/icons/comment_icon.png"
                           alt="Comments"
-                          className="w-16 h-16 transition-colors duration-500"
+                          className="w-16 h-16"
                         />
                       ) : course.label === "IdeaGen" ? (
                         <img
                           src="/images/icons/bulb.png"
                           alt="IdeaGen"
-                          className="w-16 h-20 transition-colors duration-500"
+                          className="w-16 h-20"
                         />
                       ) : (
-                        <Icon className={`w-12 h-12 ${getAccentColorClass(course.accentColor)} transition-colors duration-500`} />
+                        <Icon className={`w-12 h-12 ${getAccentColorClass(course.accentColor)}`} />
                       )}
                     </div>
                   </div>

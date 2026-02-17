@@ -9,7 +9,7 @@ interface WelcomeCardProps {
 
 const WelcomeCard = ({ onStart }: WelcomeCardProps) => {
   return (
-    <div className="floating-card w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 overflow-hidden bg-zinc-900 border-zinc-800">
+    <div className="floating-card w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 overflow-hidden bg-zinc-900 border-zinc-800 rounded-2xl">
       {/* Left content */}
       <div className="flex flex-col justify-between p-10 md:p-14">
         <div>
@@ -34,7 +34,7 @@ const WelcomeCard = ({ onStart }: WelcomeCardProps) => {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={onStart}
-            className="inline-flex items-center gap-3 rounded-lg bg-white hover:bg-gray-100 text-black px-6 py-3 text-sm font-medium transition-all"
+            className="inline-flex items-center gap-3 rounded-lg bg-white hover:bg-gray-100 text-black px-3 py-1 text-xs font-medium transition-colors"
           >
             Start <ArrowRight size={16} />
           </motion.button>

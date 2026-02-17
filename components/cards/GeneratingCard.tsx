@@ -8,7 +8,7 @@ interface GeneratingCardProps {
 
 const GeneratingCard = ({ topic }: GeneratingCardProps) => {
   return (
-    <div className="floating-card w-full max-w-5xl p-14 md:p-20 flex flex-col items-center justify-center text-center min-h-[400px] bg-zinc-900 border-zinc-800">
+    <div className="floating-card w-full max-w-5xl p-14 md:p-20 flex flex-col items-center justify-center text-center min-h-[400px] bg-zinc-900 border-zinc-800 rounded-2xl">
       <div className="relative mb-10">
         {[0, 1, 2].map((i) => (
           <motion.div

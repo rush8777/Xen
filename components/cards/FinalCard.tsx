@@ -17,7 +17,7 @@ interface FinalCardProps {
 
 const FinalCard = ({ courseData, onRestart, onComplete }: FinalCardProps) => {
   return (
-    <div className="floating-card w-full max-w-5xl p-10 md:p-14 bg-zinc-900 border-zinc-800">
+    <div className="floating-card w-full max-w-5xl p-10 md:p-14 bg-zinc-900 border-zinc-800 rounded-2xl">
       <div className="text-center mb-10">
         <motion.div
           initial={{ scale: 0 }}
@@ -72,7 +72,7 @@ const FinalCard = ({ courseData, onRestart, onComplete }: FinalCardProps) => {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={onComplete}
-          className="inline-flex items-center gap-3 rounded-lg bg-white hover:bg-gray-100 text-black px-6 py-3 text-sm font-medium transition-all"
+          className="inline-flex items-center gap-3 rounded-lg bg-white hover:bg-gray-100 text-black px-3 py-1 text-xs font-medium transition-colors"
         >
           <Download size={16} /> Export
         </motion.button>
