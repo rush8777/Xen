@@ -4,11 +4,12 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
 from google import genai
 from google.genai import types
 
+from ..gemini_backend.gemini_client import call_gemini_with_cached_video
 logger = logging.getLogger(__name__)
 
 
@@ -63,7 +64,7 @@ class ProjectOverviewGenerator:
                 model=self.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.2,
+                    temperature=1.0,
                     response_mime_type="application/json",
                 ),
             )
@@ -120,175 +121,235 @@ class ProjectOverviewGenerator:
             logger.error("Response text (first 500 chars): %s", response_text[:500])
             raise ValueError(f"Invalid JSON response from Gemini: {str(e)}")
 
-    def _create_prompt(self, analysis_content: str, video_url: str, project_name: str) -> str:
-        template = """ROLE
+    def _create_prompt(self, video_url: str, project_name: str,duration_seconds: str) -> str:
+        template = """
+ROLE
 
-You are a Video Performance Intelligence System.
+You are a high-performance short-form video analyzer.
 
-You DO NOT analyze raw video.
-You DO NOT infer new visual information.
+Your task is to evaluate one single continuous video and extract 
+all performance-critical signals that influence virality, retention, 
+engagement, and algorithm distribution.
 
-You are given a structured, interval-based computer-vision report that acts as
-the single source of truth for what appears in the video.
+You are not a storyteller.
+You are not a summarizer.
+You are not a fan.
 
-Your task is to analyze this reference output to extract:
-- Viral potential signals
-- Retention mechanics
-- Psychological impact
-- Authority positioning
-- Creator maturity level
-- Industry-readiness
+You are a performance engineer analyzing content mechanics.
 
-You must base ALL reasoning strictly on the provided report.
+------------------------------------------
+CORE OBJECTIVE
+------------------------------------------
 
---------------------------------------------------
-INPUT CONSTRAINTS
---------------------------------------------------
+Extract measurable and observable elements that affect:
 
-The input consists of repeated 5-second interval logs with the following sections:
+• Hook strength
+• Retention probability
+• Emotional triggers
+• Shareability
+• Platform algorithm compatibility
+• Authority perception
+• Production quality
+• Competitive positioning
 
-1. CAMERA & FRAME
-2. ENVIRONMENT & BACKGROUND
-3. PEOPLE / HUMAN FIGURES
-4. OBJECTS & PROPS
-5. TEXT & SYMBOLS
-6. MOTION & CHANGES
-7. LIGHTING & COLOR
-8. AUDIO-VISIBLE INDICATORS
-9. OCCLUSIONS & VISIBILITY LIMITS
+------------------------------------------
+TEMPORAL STRUCTURE (20-SECOND MODEL)
+------------------------------------------
 
-Treat this data as ground truth.
-Do not contradict it.
-Do not invent missing details.
+Analyze the video at exact 20-second intervals starting at:
 
---------------------------------------------------
-ANALYSIS OBJECTIVE
---------------------------------------------------
+00:00–00:20  
+00:20–00:40  
+00:40–01:00  
+Continue sequentially until the video ends.
 
-Determine whether the video is likely to:
-- Stop the scroll
-- Retain attention
-- Trigger emotional or cognitive engagement
-- Be shared
-- Convert viewers to a higher level of thinking or action
+Do NOT skip intervals.
+Do NOT merge intervals.
+Intervals are strictly time-based.
 
---------------------------------------------------
-OUTPUT STRUCTURE (MANDATORY)
---------------------------------------------------
+Within each 20-second interval:
 
-1. STRUCTURAL PERFORMANCE ANALYSIS
-2. RETENTION & PACING ANALYSIS
-3. PSYCHOLOGICAL & COGNITIVE SIGNALS
-4. VISUAL COMPETITIVENESS
-5. AUTHORITY & CREATOR POSITIONING
-6. PLATFORM RISK FACTORS
-7. SUCCESS PROBABILITY ESTIMATE
-8. CREATOR LEVEL ASSESSMENT
-9. ACTIONABLE IMPROVEMENTS
+You must evaluate overall mechanics across the full 20 seconds,
+while also identifying internal pacing shifts or drop-risk moments.
 
---------------------------------------------------
-SECTION DEFINITIONS
---------------------------------------------------
+In addition to interval reporting,
+you must also provide a final performance evaluation section.
 
-1. STRUCTURAL PERFORMANCE ANALYSIS
-Evaluate, using the reference data:
-- Presence or absence of motion across intervals
-- Frequency of visual change
-- Human presence vs non-human visuals
-- Text frequency and placement
-- Camera variation
+------------------------------------------
+OBSERVATION RULES
+------------------------------------------
 
-State how these factors affect attention.
+You must:
 
-2. RETENTION & PACING ANALYSIS
-Based on interval-to-interval changes:
-- Does visual novelty increase, decrease, or remain static?
-- Are there pattern interrupts?
-- Is pacing fast, moderate, or slow?
+• Base analysis only on visible and audible content.
+• Extract performance-relevant signals only.
+• Quantify whenever possible.
+• Identify drop-risk moments.
+• Detect hook mechanics.
+• Identify pattern interrupts.
+• Identify emotional triggers.
+• Identify pacing acceleration or slowdown.
 
-Explain retention implications.
+You must NOT:
 
-3. PSYCHOLOGICAL & COGNITIVE SIGNALS
-Using visible elements only:
-- Identify possible triggers such as:
-  • Curiosity
-  • Identity
-  • Aspiration
-  • Authority
-  • Familiarity
-  • Contrast
+• Guess viewer psychology.
+• Assume algorithm outcomes.
+• Use vague phrases such as:
+  "seems viral"
+  "probably successful"
+  "might perform well"
 
-If no trigger is supported by the data, state:
-"No strong psychological trigger detected."
+Evaluate mechanics only.
 
-4. VISUAL COMPETITIVENESS
-Compare the observed visual structure against
-high-performing short-form content norms:
-- Motion density
-- Human face presence
-- Scene variation
-- Text overlays
-- Lighting contrast
+------------------------------------------
+INTERVAL OUTPUT STRUCTURE
+------------------------------------------
 
-Rate competitiveness: Low / Medium / High.
+For each 20-second interval use:
 
-5. AUTHORITY & CREATOR POSITIONING
-Based on:
-- Production quality
-- Visual consistency
-- Presence of speaker or branding
-- Text clarity
+INTERVAL: [MM:SS – MM:SS]
 
-Classify creator positioning:
-- Beginner
-- Intermediate
-- Advanced
-- Industry-Level
+1. ATTENTION STRUCTURE (0–10)
+   - Strength of opening within this 20s window
+   - Movement intensity
+   - Curiosity trigger present?
+   - Tension or contrast introduced?
+   - Scroll-stopping power rating
 
-6. PLATFORM RISK FACTORS
-Identify risks strictly supported by the data:
-- Static visuals across many intervals
-- Lack of human presence
-- Low motion
-- No text reinforcement
-- Repetitive framing
+2. PACING & EDIT INTENSITY
+   - Total cuts in 20 seconds
+   - Camera angle changes
+   - Zooms / transitions detected
+   - Pattern interrupts present? (Yes/No)
+   - Dead space duration (seconds)
 
-Explain how each risk affects reach.
+3. VISUAL & AUDIO PRODUCTION QUALITY (0–10)
+   - Lighting consistency
+   - Framing stability
+   - Audio clarity (if detectable)
+   - Background distractions
+   - Overall polish rating
 
-7. SUCCESS PROBABILITY ESTIMATE
-Estimate likelihood of strong performance:
-- Low (unlikely to exceed baseline reach)
-- Medium (potential with strong audio/caption)
-- High (strong standalone visual performer)
+4. EMOTIONAL TRIGGER SIGNALS
+   - Facial intensity changes
+   - Voice intensity variation
+   - Gesture escalation
+   - Conflict indicators
+   - Emotional shift detected? (Yes/No)
 
-Explain reasoning.
+5. INFORMATION DENSITY
+   - Number of distinct ideas introduced
+   - Repetition frequency
+   - Escalation of value? (Yes/No)
+   - Cognitive load level (Low / Medium / High)
 
-8. CREATOR LEVEL ASSESSMENT
-Determine whether this content reflects:
-- Casual creator
-- Growth-stage creator
-- Professional creator
-- Industry leader
+6. RETENTION RISK ANALYSIS
+   - Low-stimulation duration (seconds)
+   - Predictable sequences
+   - Over-explanation detected?
+   - Engagement drop moment timestamp (if any)
+   - Risk Level (Low / Medium / High)
 
-Base this only on visual sophistication and structure.
+7. COMPETITIVE INTENSITY
+   - Visual uniqueness
+   - Delivery intensity
+   - Platform-native format usage
+   - Competitive rating (0–10)
 
-9. ACTIONABLE IMPROVEMENTS
+------------------------------------------
+POST-VIDEO PERFORMANCE EVALUATION
+------------------------------------------
+
+After final interval, output:
+
+------------------------------------------
+1. HOOK STRENGTH ANALYSIS
+------------------------------------------
+
+- First 5-second power score (0–10)
+- First 20-second structural strength (0–10)
+- Is value immediate?
+- Is curiosity gap sustained?
+
+------------------------------------------
+2. RETENTION STRUCTURE
+------------------------------------------
+
+- Strongest 20-second interval
+- Weakest 20-second interval
+- Estimated retention sustainability (0–100)
+- Escalation consistency rating (0–10)
+- Loop potential (Yes/No)
+
+------------------------------------------
+3. EMOTIONAL IMPACT PROFILE
+------------------------------------------
+
+Primary emotion triggered:
+Secondary emotion:
+Intensity level (0–10)
+Emotional consistency (0–10)
+
+------------------------------------------
+4. SHAREABILITY FACTORS
+------------------------------------------
+
+- Relatability strength (0–10)
+- Controversy presence (0–10)
+- Practical value strength (0–10)
+- Perspective-shift factor (0–10)
+- Overall share potential (0–10)
+
+------------------------------------------
+5. PLATFORM ALGORITHM COMPATIBILITY
+------------------------------------------
+
+Evaluate compatibility for:
+
+TikTok (0–10):
+Instagram Reels (0–10):
+YouTube Shorts (0–10):
+
+Base ratings on pacing, hook speed, edit density,
+and audience stimulation level.
+
+------------------------------------------
+6. VIRALITY INDEX
+------------------------------------------
+
 Provide:
-- 3–5 specific, high-impact improvements
-- Each improvement must map directly to a weakness found
-- Improvements must be realistic and implementable
 
---------------------------------------------------
-FINAL RULES
---------------------------------------------------
+HOOK SCORE (0–10)
+RETENTION SCORE (0–10)
+ENGAGEMENT TRIGGER SCORE (0–10)
+PRODUCTION SCORE (0–10)
+COMPETITIVE SCORE (0–10)
 
-• Do NOT restate the visual descriptions
-• Do NOT summarize the video content
-• Do NOT invent unseen elements
-• Reason only from the provided reference output
-• Be diagnostic, not motivational
-• Precision over verbosity
+TOTAL VIRALITY INDEX (0–100)
 
+------------------------------------------
+7. TOP 5 MECHANICAL IMPROVEMENTS
+------------------------------------------
+
+List exact structural and mechanical changes that would increase:
+
+• Hook strength
+• Retention
+• Emotional intensity
+• Shareability
+• Platform competitiveness
+
+------------------------------------------
+STRICT RULES
+------------------------------------------
+
+No story summarization.
+No motivational commentary.
+No general advice.
+Only mechanical evaluation.
+No vague language.
+
+End output after improvement section.
         """
         return f"""You are a content writer and analyst. Use the following video analysis data to generate a concise Video Overview.
 
@@ -296,8 +357,6 @@ VIDEO INFO:
 - URL: {video_url}
 - Project: {project_name}
 
-ANALYSIS DATA:
-{analysis_content}
 
 use the following template to genrate the markdown blog:
 {template}
@@ -327,7 +386,54 @@ RULES:
 - Make insights specific and actionable, but grounded in the provided analysis/comments
 """
 
-    def generate_overview(
+
+    async def _generate_overview_from_cached_video(
+        self,
+        *,
+        cached_content_name: str,
+        duration_seconds: float,
+        video_url: str,
+        project_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Generate blog + summary + insights directly from cached video in a single call.
+
+        Output schema matches the current overview JSON contract:
+          {
+            "version": 1,
+            "blog": {"title": "...", "markdown": "..."},
+            "summary": "...",
+            "insights": {
+              "situation": "...",
+              "pain": ["..."],
+              "impact": ["..."],
+              "critical_event": "...",
+              "decision": "..."
+            }
+          }
+        """
+        prompt = self._create_prompt(
+            video_url=video_url,
+            project_name=project_name,
+            duration_seconds=duration_seconds,
+        )
+
+        text = await call_gemini_with_cached_video(
+            cached_content_name=cached_content_name,
+            prompt=prompt,
+        )
+
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid overview JSON from Gemini: {e}\nResponse: {text[:500]}")
+
+        if not isinstance(data, dict):
+            raise ValueError("Overview JSON must be an object")
+
+        return data
+
+    async def generate_overview(
         self,
         *,
         analysis_file_path: str,
@@ -335,14 +441,26 @@ RULES:
         project_name: str,
         project_id: int,
         job_id: str | None = None,
+        cached_content_name: str | None = None,
+        video_duration_seconds: float | None = None,
     ) -> dict[str, Any]:
         logger.info("Generating overview for project %s", project_id)
 
-        analysis_content = self._read_analysis_content(analysis_file_path)
-        prompt = self._create_prompt(analysis_content, video_url, project_name)
-        response_text = self._generate_content(prompt)
-        response_text = self._sanitize_response_text(response_text)
-        overview = self._parse_json(response_text)
+        # Prefer cost-optimized path using cached video content when available
+        if cached_content_name:
+            overview = await self._generate_overview_from_cached_video(
+                cached_content_name=cached_content_name,
+                duration_seconds=float(video_duration_seconds or 0),
+                video_url=video_url,
+                project_name=project_name,
+            )
+        else:
+            # Legacy path: read large analysis file and create a text-based prompt
+            analysis_content = self._read_analysis_content(analysis_file_path)
+            prompt = self._create_prompt(video_url, project_name, str(video_duration_seconds or 0))
+            response_text = self._generate_content(prompt)
+            response_text = self._sanitize_response_text(response_text)
+            overview = self._parse_json(response_text)
 
         overview["project_id"] = project_id
         overview["generated_at"] = datetime.utcnow().isoformat()
@@ -350,6 +468,8 @@ RULES:
             "analysis_file_path": str(analysis_file_path),
             "video_url": video_url,
             "job_id": job_id,
+            "cached_content_name": cached_content_name,
+            "video_duration_seconds": video_duration_seconds,
         }
         return overview
 

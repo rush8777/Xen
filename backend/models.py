@@ -161,8 +161,19 @@ class Project(Base):
     job_id = Column(String(255), nullable=True, index=True)  # Analysis job ID
     analysis_file_path = Column(String(1000), nullable=True)  # Path to analysis results file
     gemini_file_uri = Column(String(500), nullable=True)  # Gemini file URI reference
+    # Cached video metadata for cost-optimized analysis
+    gemini_cached_content_name = Column(String(255), nullable=True)
+    video_duration_seconds = Column(Integer, nullable=True)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
+
+    # Vector data generation status tracking
+    vector_generation_status = Column(
+        String(20), nullable=False, default="not_started"
+    )  # not_started, pending, completed, failed
+    vector_generation_started_at = Column(DateTime, nullable=True)
+    vector_generation_completed_at = Column(DateTime, nullable=True)
+    vector_generation_error = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
@@ -314,5 +325,66 @@ class ProjectOverview(Base):
     )
 
     project = relationship("Project")
+
+
+class VideoInterval(Base):
+    __tablename__ = "video_intervals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_index = Column(Integer, nullable=False)
+    start_time_seconds = Column(Integer, nullable=False)
+    end_time_seconds = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("video_id", "interval_index", name="uq_video_interval_index"),)
+
+    video = relationship("Video")
+
+
+class VideoSubInterval(Base):
+    __tablename__ = "video_sub_intervals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    interval_id = Column(Integer, ForeignKey("video_intervals.id"), nullable=False, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+
+    sub_index = Column(Integer, nullable=False)
+    start_time_seconds = Column(Integer, nullable=False)
+    end_time_seconds = Column(Integer, nullable=False)
+
+    camera_frame = Column(Text, nullable=True)
+    environment_background = Column(Text, nullable=True)
+    people_figures = Column(Text, nullable=True)
+    objects_props = Column(Text, nullable=True)
+    text_symbols = Column(Text, nullable=True)
+    motion_changes = Column(Text, nullable=True)
+    lighting_color = Column(Text, nullable=True)
+    audio_visible_indicators = Column(Text, nullable=True)
+    occlusions_limits = Column(Text, nullable=True)
+
+    raw_combined_text = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("video_id", "start_time_seconds", name="uq_video_sub_interval_time"),)
+
+    interval = relationship("VideoInterval")
+    video = relationship("Video")
+
+
+class IntervalEmbedding(Base):
+    __tablename__ = "interval_embeddings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_id = Column(Integer, ForeignKey("video_intervals.id"), nullable=False, index=True)
+    combined_interval_text = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    video = relationship("Video")
+    interval = relationship("VideoInterval")
 
 

@@ -67,6 +67,8 @@ def _generate_statistics_sync(project_id: int) -> None:
                 project_name=project.name,
                 project_id=project.id,
                 job_id=project.job_id,
+                cached_content_name=project.gemini_cached_content_name,
+                video_duration_seconds=project.video_duration_seconds,
             )
 
             stats_record.stats_json = json.dumps(stats_data)

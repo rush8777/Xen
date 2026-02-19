@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from ..gemini_backend.statistics_generator import statistics_generator as optimized_statistics_generator
+from ..gemini_backend.gemini_client import (
+    generate_statistics_from_cached_video,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +36,30 @@ class ProjectStatisticsGenerator:
         project_name: str,
         project_id: int,
         job_id: str | None = None,
+        cached_content_name: str | None = None,
+        video_duration_seconds: float | None = None,
     ) -> dict[str, Any]:
         logger.info("Generating statistics for project %s", project_id)
 
-        analysis_content = self._read_analysis_content(analysis_file_path)
-
         async def _run() -> dict[str, Any]:
-            raw = await optimized_statistics_generator.generate_all_statistics(
-                project_id=str(project_id),
-                analysis_content=analysis_content,
-                video_url=video_url,
-                project_name=project_name,
-                use_cache=True,
-            )
+            # Prefer cost-optimized path using cached video content when available
+            if cached_content_name and video_duration_seconds and video_duration_seconds > 0:
+                raw = await generate_statistics_from_cached_video(
+                    cached_content_name=cached_content_name,
+                    duration_seconds=video_duration_seconds,
+                    video_url=video_url,
+                    project_name=project_name,
+                )
+            else:
+                # Legacy path: read full analysis text file and use the optimized statistics generator
+                analysis_content = self._read_analysis_content(analysis_file_path)
+                raw = await optimized_statistics_generator.generate_all_statistics(
+                    project_id=str(project_id),
+                    analysis_content=analysis_content,
+                    video_url=video_url,
+                    project_name=project_name,
+                    use_cache=True,
+                )
 
             component_meta: dict[str, Any] = {
                 "schema_version": self.schema_version,
@@ -84,6 +98,8 @@ class ProjectStatisticsGenerator:
                 "analysis_file_path": str(analysis_file_path),
                 "video_url": video_url,
                 "job_id": job_id,
+                "cached_content_name": cached_content_name,
+                "video_duration_seconds": video_duration_seconds,
             }
 
             return stats_data
