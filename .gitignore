@@ -32,7 +32,10 @@ next-env.d.ts
 
 # python cache
 __pycache__/
+**/__pycache__/
 backend/__pycache__/
+backend/routers/__pycache__/
+backend/services/__pycache__/
 backend/gemini_backend/__pycache__/
 backend/gemini_backend/outputs/
 *.pyc
