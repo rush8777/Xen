@@ -16,7 +16,7 @@ CACHE_DIR.mkdir(exist_ok=True)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Processing settings
-INTERVAL_SECONDS = 20
+# (Interval-based analysis has been removed; keep only generic throttling knobs.)
 MAX_CONCURRENT_REQUESTS = 10
 
 # Cache settings

@@ -189,7 +189,7 @@ class StatisticsGenerator:
                 model="models/gemini-2.5-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.2,
+                    temperature=1.0,
                     response_mime_type="application/json",
                 ),
             )

@@ -10,6 +10,12 @@ class StatisticsPrompts:
     """Generates prompts for statistics extraction with intelligent inference"""
     
     def _create_prompt_video_metrics_grid(self, compact_data: str, video_url: str, project_name: str) -> str:
+        data_section = f"""
+COMPACT ANALYSIS DATA:
+{compact_data}
+""" if compact_data else """
+NOTE: You are analyzing the video directly via cached content. Use the video visuals and on-screen text to infer metrics.
+"""
         return f"""
 SYSTEM ROLE:
 You are an advanced video content analyzer that infers engagement metrics
@@ -18,9 +24,7 @@ from visual and textual evidence in video analysis data.
 VIDEO CONTEXT:
 URL: {video_url}
 PROJECT: {project_name}
-
-COMPACT ANALYSIS DATA:
-{compact_data}
+{data_section}
 
 REQUIRED OUTPUT SCHEMA (RETURN ONLY VALID JSON, NO MARKDOWN):
 {{
@@ -531,26 +535,39 @@ OUTPUT REQUIREMENTS:
     def build_prompt(self, component_name: str, compact_data: str, video_url: str, project_name: str) -> str:
         """Build the appropriate prompt for the component"""
         
-        if component_name == "video_metrics_grid":
-            return self._create_prompt_video_metrics_grid(compact_data, video_url, project_name)
-        elif component_name == "sentiment_pulse":
-            return self._create_prompt_sentiment_pulse(compact_data, video_url, project_name)
-        elif component_name == "emotion_radar":
-            return self._create_prompt_emotion_radar(compact_data, video_url, project_name)
-        elif component_name == "emotional_intensity_timeline":
-            return self._create_prompt_emotional_intensity_timeline(compact_data, video_url, project_name)
-        elif component_name == "audience_demographics.age_distribution":
-            return self._create_prompt_audience_age_distribution(compact_data, video_url, project_name)
-        elif component_name == "audience_demographics.gender_distribution":
-            return self._create_prompt_audience_gender_distribution(compact_data, video_url, project_name)
-        elif component_name == "audience_demographics.top_locations":
-            return self._create_prompt_audience_top_locations(compact_data, video_url, project_name)
-        elif component_name == "audience_demographics.audience_interests":
-            return self._create_prompt_audience_interests(compact_data, video_url, project_name)
-        elif component_name == "top_comments":
-            return self._create_prompt_top_comments(compact_data, video_url, project_name)
+        # When compact_data is empty, we're using cached video - add a note to prompts
+        if not compact_data:
+            # Add instruction to use cached video content directly
+            video_note = "\n\nNOTE: You are analyzing the video directly via cached content. Use the video visuals, on-screen text, and visual elements to perform the analysis.\n"
+        else:
+            video_note = ""
         
-        raise ValueError(f"Unknown statistics component: {component_name}")
+        if component_name == "video_metrics_grid":
+            prompt = self._create_prompt_video_metrics_grid(compact_data, video_url, project_name)
+        elif component_name == "sentiment_pulse":
+            prompt = self._create_prompt_sentiment_pulse(compact_data, video_url, project_name)
+        elif component_name == "emotion_radar":
+            prompt = self._create_prompt_emotion_radar(compact_data, video_url, project_name)
+        elif component_name == "emotional_intensity_timeline":
+            prompt = self._create_prompt_emotional_intensity_timeline(compact_data, video_url, project_name)
+        elif component_name == "audience_demographics.age_distribution":
+            prompt = self._create_prompt_audience_age_distribution(compact_data, video_url, project_name)
+        elif component_name == "audience_demographics.gender_distribution":
+            prompt = self._create_prompt_audience_gender_distribution(compact_data, video_url, project_name)
+        elif component_name == "audience_demographics.top_locations":
+            prompt = self._create_prompt_audience_top_locations(compact_data, video_url, project_name)
+        elif component_name == "audience_demographics.audience_interests":
+            prompt = self._create_prompt_audience_interests(compact_data, video_url, project_name)
+        elif component_name == "top_comments":
+            prompt = self._create_prompt_top_comments(compact_data, video_url, project_name)
+        else:
+            raise ValueError(f"Unknown statistics component: {component_name}")
+        
+        # Append video note if using cached content
+        if video_note:
+            prompt = prompt.rstrip() + video_note
+        
+        return prompt
 
 
 # Global instance

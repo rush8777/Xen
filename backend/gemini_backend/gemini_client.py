@@ -1,13 +1,12 @@
 import asyncio
-import time
+import json
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from google import genai
 from google.genai import types
 
 from . import config
-from .video_processor import format_timestamp
  
 
 
@@ -20,150 +19,19 @@ client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 
 # -------------------------------------------------------------------
-# System Instructions (STRICT)
+# Cached-content system instruction (NEUTRAL)
 # -------------------------------------------------------------------
 
-SYSTEM_INSTRUCTIONS = """
-
-ROLE
-
-You are a computer-vision reporting system, not an analyst, narrator, or summarizer.
-Your job is to produce a ground-truth visual log.
-
-You are given one single continuous video in full.
-You have access to the entire video timeline, but you must still report observations at fixed 20-second intervals.
-Within each 20-second interval, provide analysis for four 5-second sub-intervals.
-
-TEMPORAL RULES (ABSOLUTE)
-
-Observe the video at exact 20-second intervals starting from 00:00–00:20
-Within each 20-second interval, analyze four 5-second sub-intervals:
-- 00:00–00:05, 00:05–00:10, 00:10–00:15, 00:15–00:20
-Continue sequentially until the video ends
-DO NOT skip any interval
-DO NOT merge intervals
-Each 5-second sub-interval must have its own complete description, even if nothing changes
-Intervals are time-based, not clip-based
-
-OBSERVATION-ONLY RULES (ANTI-HALLUCINATION CORE)
-
-You MUST:
-
-Describe only what is directly visible on screen
-Use literal, surface-level language
-Prefer explicit uncertainty over guessing
-State visibility limits clearly
-
-You MUST NOT:
-
-Infer intent, emotion, purpose, or cause
-Assume continuity beyond what is visible
-Identify people unless identity is explicitly shown as readable on-screen text
-Guess obscured or off-screen elements
-Use interpretive phrases such as:
-
-"appears to be"
-"seems"
-"probably"
-"likely"
-"suggests"
-
-If something cannot be verified visually, state:
-
-"Not visually identifiable."
-
-REQUIRED OUTPUT STRUCTURE (MANDATORY)
-
-Use the following structure for every interval:
-
-INTERVAL: [MM:SS – MM:SS]
-
-1. CAMERA & FRAME
-2. ENVIRONMENT & BACKGROUND
-3. PEOPLE / HUMAN FIGURES
-4. OBJECTS & PROPS
-5. TEXT & SYMBOLS
-6. MOTION & CHANGES
-7. LIGHTING & COLOR
-8. AUDIO-VISIBLE INDICATORS
-9. OCCLUSIONS & VISIBILITY LIMITS
-
-SECTION RULES
-**Should contain suitable number of words for each section which best describes the video **
-
-1. CAMERA & FRAME
-
-Camera position (static / moving / panning / zooming)
-Framing (wide, medium, close-up)
-Orientation (landscape / portrait)
-On-screen overlays or UI elements
-
-2. ENVIRONMENT & BACKGROUND
-
-Physical setting only if visually obvious
-Visible surfaces, structures, scenery
-Foreground / midground / background elements
-
-3. PEOPLE / HUMAN FIGURES
-
-If present:
-
-Count of individuals
-Clothing, posture, visible physical traits
-Observable actions only
-
-No emotions, roles, or identity assumptions.
-
-4. OBJECTS & PROPS
-
-All visible objects
-Shape, color, size (relative), material if visually clear
-Position and motion state
-
-5. TEXT & SYMBOLS
-
-Transcribe text exactly as shown
-Preserve case and spelling
-If unreadable: state so explicitly
-
-6. MOTION & CHANGES
-
-Describe visible motion within the interval
-If no motion: explicitly state "No visible motion"
-
-7. LIGHTING & COLOR
-
-Brightness level
-Light sources if visible
-Dominant colors and shadows
-
-8. AUDIO-VISIBLE INDICATORS
-
-Visual-only cues of sound (e.g., mouth movement, subtitles, microphones).
-No audio inference.
-
-9. OCCLUSIONS & VISIBILITY LIMITS
-
-Cropped, blurred, obstructed elements
-Any uncertainty or visibility limitation
-
-FAILURE HANDLING
-
-Blank or black frames must be described as such
-Repeated scenes must still be fully described per interval
-If nothing changes, still output all sections
-
-FINAL HARD RULES
-
-No summarization
-No conclusions
-No cross-interval reasoning
-Skip if data is insufficient to analyze and keep a note "Cannot describe"
-No compression or stylistic language
-Accuracy over completeness
-
-
-End output at the final interval only.
+# NOTE:
+# Cached content "system_instruction" becomes the default global framing for all
+# subsequent `generate_content` calls that reference `cached_content_name`.
+# We keep this neutral so the caller prompts (overview/stats/etc.) fully control
+# output format. This intentionally removes any interval/20-second analysis rules.
+CACHED_VIDEO_SYSTEM_INSTRUCTION = """
+You are a multimodal assistant that can analyze the provided video.
+Follow the user's prompt precisely.
+If something cannot be verified from the video, say so explicitly.
+Return outputs in the format requested by the prompt.
 """.strip()
 
 
@@ -173,10 +41,14 @@ End output at the final interval only.
 
 async def upload_video_to_gemini(video_path: Path) -> str:
     """
-    Upload video to Gemini and return file.name
+    Upload video to Gemini and create cached content, return cached content name.
+
+    The cached content is created with a neutral system instruction so other
+    downstream calls (overview generation, etc.) can fully control behavior.
     """
     loop = asyncio.get_running_loop()
 
+    # Step 1: Upload the video file
     file = await loop.run_in_executor(
         None,
         lambda: client.files.upload(file=str(video_path))
@@ -190,108 +62,159 @@ async def upload_video_to_gemini(video_path: Path) -> str:
     if getattr(file.state, "name", None) != "ACTIVE":
         raise RuntimeError(f"File upload failed: {getattr(file.state, 'name', file.state)}")
 
-    return file.name
+    # Step 2: Create cached content from the uploaded file
+    cache = await loop.run_in_executor(
+        None,
+        lambda: client.caches.create(
+            model="models/gemini-2.5-flash",
+            config=types.CreateCachedContentConfig(
+                display_name=f"video-analysis-{video_path.stem[:12]}",
+                system_instruction=CACHED_VIDEO_SYSTEM_INSTRUCTION,
+                contents=[file],
+                ttl="3600s",  # 1 hour cache
+            ),
+        )
+    )
+
+    return cache.name
 
 
 # -------------------------------------------------------------------
-# Interval Analysis
+# Cached Video Analysis Functions (Statistics, Overview, SWOT)
 # -------------------------------------------------------------------
 
-async def get_interval_description(
+async def call_gemini_with_cached_video(
+    *,
     cached_content_name: str,
-    start: int,
-    end: int,
+    prompt: str,
     model: str = "models/gemini-2.5-flash",
+    response_mime_type: str = "application/json",
 ) -> str:
     """
-    Generate strict visual description for a time interval with robust error handling
+    Shared low-level helper to call Gemini using existing cached video content.
+
+    This keeps requests cheap by:
+    - Reusing the uploaded video via cached_content_name
+    - Sending only a compact text prompt per call
     """
-    try:
-        # Validate inputs
-        if not cached_content_name:
-            raise ValueError("cached_content_name cannot be empty")
-        if start < 0 or end < 0:
-            raise ValueError("start and end times must be non-negative")
-        if start >= end:
-            raise ValueError("start time must be less than end time")
-        
-        # Create prompt - request analysis of specific time range
-        # The system instructions are already in the cached content
-        prompt = f"""Analyze the video interval from {format_timestamp(start, end)} ({start}s to {end}s).
+    if not cached_content_name:
+        raise ValueError("cached_content_name is required")
 
-Follow the system instructions to provide a complete interval report."""
-        
-        # Get event loop
-        loop = asyncio.get_running_loop()
-        
-        # Define generation function
-        def generate():
-            try:
-                # Use the cached content which already has the video and system instructions
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        cached_content=cached_content_name,
-                        temperature=0.2,
-                    ),
-                )
-                return response
-                
-            except Exception as e:
-                raise RuntimeError(f"Gemini API call failed: {str(e)}") from e
-        
-        # Execute with timeout
-        response = await asyncio.wait_for(
-            loop.run_in_executor(None, generate),
-            timeout=60.0  # 60 second timeout for video processing
-        )
-        
-        result = response.text.strip()
-        
-        if not result:
-            raise ValueError("Empty response from Gemini API")
-        
-        return result
-        
-    except asyncio.TimeoutError:
-        raise TimeoutError(f"Request timed out for interval {start}-{end}s")
-    except ValueError as e:
-        raise ValueError(f"Validation error: {str(e)}") from e
-    except RuntimeError as e:
-        raise RuntimeError(f"API error for interval {start}-{end}s: {str(e)}") from e
-    except Exception as e:
-        raise Exception(f"Unexpected error processing interval {start}-{end}s: {str(e)}") from e
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            cached_content=cached_content_name,
+            temperature=1.0,
+            response_mime_type=response_mime_type,
+        ),
+    )
+
+    text = (response.text or "").strip()
+    if not text:
+        raise ValueError("Empty response from Gemini (cached video call)")
+    return text
 
 
-# -------------------------------------------------------------------
-# Analyze All Intervals (Concurrent + Throttled)
-# -------------------------------------------------------------------
-
-async def analyze_video_intervals(
+async def generate_statistics_from_cached_video(
+    *,
     cached_content_name: str,
-    intervals: List[Tuple[int, int]]
-) -> List[Tuple[str, str]]:
+    duration_seconds: float,
+    video_url: str,
+    project_name: str,
+) -> Dict[str, Any]:
     """
-    Analyze video intervals concurrently with rate limiting
+    Generate all statistics components from cached video using component-by-component approach.
+    Uses the legacy statistics_prompts system but with cached video content instead of text files.
+
+    Returns a dict shaped like the raw output expected by ProjectStatisticsGenerator:
+      {
+        "video_metrics_grid": {...},
+        "sentiment_pulse": [...],
+        "emotion_radar": [...],
+        "emotional_intensity_timeline": [...],
+        "audience_demographics.age_distribution": [...],
+        "audience_demographics.gender_distribution": [...],
+        "audience_demographics.top_locations": [...],
+        "audience_demographics.audience_interests": [...],
+        "top_comments": [...]
+      }
     """
+    # Import here to avoid circular dependencies
+    try:
+        from .statistics_prompts import statistics_prompts
+    except ImportError:
+        from statistics_prompts import statistics_prompts
 
-    semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS)
-
-    async def analyze_one(start: int, end: int):
-        async with semaphore:
-            timestamp = format_timestamp(start, end)
-            try:
-                description = await get_interval_description(
-                    cached_content_name, start, end
-                )
-                return timestamp, description
-            except Exception as e:
-                return timestamp, f"Error: {str(e)}"
-
-    tasks = [
-        analyze_one(start, end)
-        for start, end in intervals
+    # Component names matching the legacy approach
+    COMPONENT_NAMES = [
+        "video_metrics_grid",
+        "sentiment_pulse",
+        "emotion_radar",
+        "emotional_intensity_timeline",
+        "audience_demographics.age_distribution",
+        "audience_demographics.gender_distribution",
+        "audience_demographics.top_locations",
+        "audience_demographics.audience_interests",
+        "top_comments",
     ]
 
-    return await asyncio.gather(*tasks)
+    results = {}
+
+    # Generate each component individually using cached video
+    for component_name in COMPONENT_NAMES:
+        try:
+            # Build prompt using existing statistics_prompts system
+            # Pass empty compact_data since we're using cached video directly
+            prompt = statistics_prompts.build_prompt(
+                component_name=component_name,
+                compact_data="",  # Empty - using cached video instead of text
+                video_url=video_url,
+                project_name=project_name,
+            )
+
+            # Call Gemini with cached video content
+            text = await call_gemini_with_cached_video(
+                cached_content_name=cached_content_name,
+                prompt=prompt,
+            )
+
+            # Parse JSON response
+            try:
+                component_data = json.loads(text)
+                results[component_name] = component_data
+            except json.JSONDecodeError as e:
+                # On error, use empty/default structure for this component
+                print(f"  ❌ {component_name}: Invalid JSON - {str(e)}")
+                # Return appropriate default based on component type
+                if component_name == "video_metrics_grid":
+                    results[component_name] = {
+                        "net_sentiment_score": 50,
+                        "net_sentiment_delta_vs_last": 0,
+                        "engagement_velocity_comments_per_hour": 0,
+                        "toxicity_alert_bots_detected": 0,
+                        "question_density_percent": 0,
+                    }
+                else:
+                    results[component_name] = []
+
+        except Exception as e:
+            print(f"  ❌ {component_name}: {str(e)}")
+            # Return appropriate default based on component type
+            if component_name == "video_metrics_grid":
+                results[component_name] = {
+                    "net_sentiment_score": 50,
+                    "net_sentiment_delta_vs_last": 0,
+                    "engagement_velocity_comments_per_hour": 0,
+                    "toxicity_alert_bots_detected": 0,
+                    "question_density_percent": 0,
+                }
+            else:
+                results[component_name] = []
+
+    return results
+
+
+#
+# NOTE: Interval-based SWOT generation was intentionally removed.
+# This module now focuses on cached-video upload + cached calls for overview/statistics.

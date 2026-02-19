@@ -8,8 +8,8 @@ import argparse
 import sys
 import os
 from pathlib import Path
-from downloader import VideoDownloader
-from config import settings
+from .downloader import VideoDownloader
+from ..config import settings
 
 
 def format_duration(seconds):
