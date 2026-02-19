@@ -136,6 +136,7 @@ export default function CreateProjectModal({
   const [filteredVideos, setFilteredVideos] = useState<LibraryVideo[]>([])
   const [videosLoading, setVideosLoading] = useState(false)
   const [selectedVideo, setSelectedVideo] = useState<LibraryVideo | null>(null)
+  const [analyzedVideoUrls, setAnalyzedVideoUrls] = useState<Set<string>>(new Set())
   const { isSidebarExpanded } = useSidebarContext()
   const [activeFilter, setActiveFilter] = useState("All Platforms")
   const [selectedPlatform, setSelectedPlatform] = useState("youtube")
@@ -228,6 +229,26 @@ export default function CreateProjectModal({
     }
   }, [])
 
+  const checkAnalyzedVideos = useCallback(async (videos: LibraryVideo[]) => {
+    const analyzedUrls = new Set<string>()
+    
+    for (const video of videos) {
+      if (!video.url) continue
+      
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/video/check-duplicate?url=${encodeURIComponent(video.url)}`)
+        const data = await response.json()
+        if (data.exists) {
+          analyzedUrls.add(video.url)
+        }
+      } catch (error) {
+        console.warn('Failed to check video status:', error)
+      }
+    }
+    
+    setAnalyzedVideoUrls(analyzedUrls)
+  }, [API_BASE_URL])
+
   const loadVideosForPlatform = useCallback(async (platform: string) => {
     setVideosLoading(true)
     try {
@@ -264,6 +285,9 @@ export default function CreateProjectModal({
       setVideos(mapped)
       setFilteredVideos(mapped)
       setSelectedVideo(null)
+      
+      // Check which videos have been analyzed
+      await checkAnalyzedVideos(mapped)
     } catch (error) {
       setVideos([])
       setFilteredVideos([])
@@ -271,7 +295,7 @@ export default function CreateProjectModal({
     } finally {
       setVideosLoading(false)
     }
-  }, [API_BASE_URL])
+  }, [API_BASE_URL, checkAnalyzedVideos])
 
   const handleFilterSelect = useCallback((filter: string) => {
     setActiveFilter(filter)
@@ -327,6 +351,21 @@ export default function CreateProjectModal({
       return
     }
     
+    // Check for duplicate video first
+    try {
+      const duplicateCheckResponse = await fetch(`${API_BASE_URL}/api/video/check-duplicate?url=${encodeURIComponent(selectedVideo.url)}`)
+      const duplicateData = await duplicateCheckResponse.json()
+      
+      if (duplicateData.exists) {
+        // Video already analyzed, navigate directly to the existing project
+        router.push(`/streamline?projectId=${duplicateData.project_id}`)
+        onClose()
+        return
+      }
+    } catch (error) {
+      console.warn('Duplicate check failed, proceeding with analysis:', error)
+    }
+    
     setIsInitializing(true)
     setInitError(null)
     
@@ -336,7 +375,7 @@ export default function CreateProjectModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: selectedVideo.url,
-          project_name: formData.projectName || "Streamline Project"
+          project_name: formData.projectName || selectedVideo?.title || "Streamline Project"
         })
       })
 
@@ -569,6 +608,16 @@ export default function CreateProjectModal({
                           {video.durationText && (
                             <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-semibold transition-all duration-300 group-hover:bg-black/90">
                               {video.durationText}
+                            </div>
+                          )}
+
+                          {/* Analyzed Badge */}
+                          {analyzedVideoUrls.has(video.url) && (
+                            <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-green-600/90 rounded text-[9px] text-white font-semibold flex items-center gap-1">
+                              <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 8 8">
+                                <circle cx="4" cy="4" r="3"/>
+                              </svg>
+                              Analyzed
                             </div>
                           )}
 

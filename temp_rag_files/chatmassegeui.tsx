@@ -1,23 +1,20 @@
 "use client"
 
-import { Copy, ThumbsUp, ThumbsDown, RotateCcw, Share2, Settings, Sparkles, Database } from "lucide-react";
+import { Copy, ThumbsUp, ThumbsDown, RotateCcw, Share2, Settings, Plus, Sparkles } from "lucide-react";
 import { useSidebarContext } from "../main/layout";
 
 interface ChatMessageProps {
   content: string;
   isUser: boolean;
   showActions?: boolean;
-  ragActive?: boolean;
-  contextChunksUsed?: number;
 }
 
 interface TopBarProps {
   onNewChat?: () => void;
-  ragActive?: boolean;
 }
 
 // ── Top Bar ────────────────────────────────────────────────────────────────────
-const TopBar = ({ onNewChat, ragActive }: TopBarProps) => {
+const TopBar = ({ onNewChat }: TopBarProps) => {
   const { isSidebarExpanded } = useSidebarContext()
   
   return (
@@ -30,12 +27,6 @@ const TopBar = ({ onNewChat, ragActive }: TopBarProps) => {
         <span className="flex items-center gap-0.5 bg-zinc-800 text-zinc-300 text-[10px] font-medium px-1.5 py-0.5 rounded-md border border-zinc-700/60">
           Plus
         </span>
-        {ragActive && (
-          <span className="flex items-center gap-1 bg-purple-900/40 text-purple-300 text-[10px] font-medium px-1.5 py-0.5 rounded-md border border-purple-700/50">
-            <Database className="w-2.5 h-2.5" />
-            RAG
-          </span>
-        )}
       </div>
 
       {/* Right – actions */}
@@ -66,7 +57,7 @@ const TopBar = ({ onNewChat, ragActive }: TopBarProps) => {
 };
 
 // ── Chat Message ───────────────────────────────────────────────────────────────
-const ChatMessage = ({ content, isUser, showActions = false, ragActive, contextChunksUsed }: ChatMessageProps) => {
+const ChatMessage = ({ content, isUser, showActions = false }: ChatMessageProps) => {
   if (isUser) {
     return (
       <div className="flex justify-end mb-4">
@@ -99,12 +90,6 @@ const ChatMessage = ({ content, isUser, showActions = false, ragActive, contextC
           <button className="p-1.5 rounded-md hover:bg-zinc-800/50 transition-colors">
             <Share2 className="w-3.5 h-3.5 text-zinc-400" />
           </button>
-          {ragActive && contextChunksUsed !== undefined && contextChunksUsed > 0 && (
-            <span className="ml-1 flex items-center gap-1 text-[9px] text-purple-400 border border-purple-800/50 bg-purple-900/20 px-1.5 py-0.5 rounded-md">
-              <Database className="w-2.5 h-2.5" />
-              {contextChunksUsed} video {contextChunksUsed === 1 ? "segment" : "segments"} used
-            </span>
-          )}
         </div>
       )}
     </div>

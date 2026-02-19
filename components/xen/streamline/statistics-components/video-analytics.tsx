@@ -60,6 +60,39 @@ export default function VideoAnalytics() {
   const [statsError, setStatsError] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
+
+  const handleRegenerateStats = async () => {
+    if (!projectId || regenerating) return
+
+    setRegenerating(true)
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/statistics/regenerate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to start statistics generation')
+      }
+
+      // Refresh status to trigger polling
+      if (statusUrl) {
+        const statusRes = await fetch(statusUrl, { cache: "no-store" })
+        if (statusRes.ok) {
+          const statusJson = await statusRes.json()
+          setStatus(statusJson.status)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to regenerate statistics:', error)
+    } finally {
+      setRegenerating(false)
+    }
+  }
 
   const statusUrl = useMemo(() => {
     if (!projectId) return null
@@ -214,9 +247,27 @@ export default function VideoAnalytics() {
   if (status === "not_started") {
     return (
       <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800 text-zinc-300">
-        <div className="text-white font-semibold mb-1">Statistics not generated yet</div>
-        <div className="text-xs text-zinc-400">
-          Generate statistics for this project, then return to this tab.
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-white font-semibold mb-1">Statistics not generated yet</div>
+            <div className="text-xs text-zinc-400">
+              Click below to generate detailed video analytics for this project.
+            </div>
+          </div>
+          <button
+            onClick={handleRegenerateStats}
+            disabled={regenerating}
+            className="px-4 py-2 bg-white hover:bg-gray-100 text-black rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {regenerating ? (
+              <>
+                <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                Generating...
+              </>
+            ) : (
+              'Generate Statistics'
+            )}
+          </button>
         </div>
       </div>
     )

@@ -1,6 +1,13 @@
 // app/chat/page.tsx
-import ChatIndex from "@/components/xen/lovableindex";
+import Layout from "@/components/xen/main/layout"
+import ChatContainer from "@/components/xen/chat/chat-container"
 
 export default function ChatPage() {
-  return <ChatIndex />;
+  return (
+    <Layout>
+      <div className="h-[calc(100vh-6rem)]">
+        <ChatContainer />
+      </div>
+    </Layout>
+  )
 }
