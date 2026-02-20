@@ -2,7 +2,7 @@
 vector_retrieval_service.py
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Handles query embedding generation and cosine similarity search across
-VideoSubInterval and IntervalEmbedding tables.
+VideoSubInterval records.
 
 All DB access is synchronous (SQLAlchemy ORM). Call from async contexts
 via run_in_executor or directly from sync code.
@@ -21,6 +21,27 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+# Similarity thresholds
+DEFAULT_SIMILARITY_THRESHOLD = 0.3
+CONTENT_SPECIFIC_THRESHOLD = 0.25
+MAX_FIELD_CHARS = 240
+MAX_CHUNK_CHARS = 800
+
+# Content type mappings
+CONTENT_KEYWORDS: dict[str, list[str]] = {
+    "motion": ["motion", "movement", "moving", "action", "dynamic"],
+    "camera": ["camera", "shot", "angle", "perspective", "view"],
+    "environment": ["environment", "background", "setting", "location"],
+    "people": ["people", "person", "character", "figure", "human"],
+    "objects": ["object", "item", "prop", "thing"],
+    "lighting": ["lighting", "light", "bright", "dark", "shadow"],
+    "audio": ["audio", "sound", "music", "noise", "voice"],
+}
+
+# ---------------------------------------------------------------------------
 # Result type
 # ---------------------------------------------------------------------------
 
@@ -29,12 +50,12 @@ logger = logging.getLogger(__name__)
 class RetrievedInterval:
     """A single retrieved interval with its similarity score and metadata."""
 
-    source: str  # "sub_interval" | "interval_embedding"
+    source: str  # "sub_interval"
     interval_id: int
     video_id: int
     start_time_seconds: int
     end_time_seconds: int
-    similarity: float  # 0.0 – 1.0
+    similarity: float  # 0.0 - 1.0
 
     # Sub-interval fields (may be None for interval-level results)
     camera_frame: Optional[str] = None
@@ -48,7 +69,7 @@ class RetrievedInterval:
     occlusions_limits: Optional[str] = None
     raw_combined_text: Optional[str] = None
 
-    # Interval-level field
+    # Interval-level field (unused when only sub-intervals are stored)
     combined_interval_text: Optional[str] = None
 
 
@@ -88,6 +109,15 @@ def _seconds_to_timestamp(seconds: int) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def _truncate(text: Optional[str], limit: int) -> Optional[str]:
+    if not text:
+        return None
+    cleaned = text.strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(0, limit - 3)].rstrip() + "..."
+
+
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
@@ -97,14 +127,18 @@ class VectorRetrievalService:
     """
     Retrieves relevant video intervals for a user query using:
       1. Gemini gemini-embedding-001 for query embedding generation.
-      2. In-memory cosine similarity against stored embeddings.
+      2. In-memory cosine similarity against stored sub-interval embeddings.
       3. Ranked, de-duplicated context assembly.
 
     Falls back gracefully to text-only search when embeddings are absent.
     """
 
-    EMBEDDING_MODEL = "models/gemini-embedding-001"
-    MAX_EMBEDDING_DIM = 768  # gemini-embedding-001 output dimension
+    # Embedding model name for `client.models.embed_content`.
+    # (Unlike `generate_content`, this API expects the bare model name.)
+    EMBEDDING_MODEL = "gemini-embedding-001"
+    # Current gemini-embedding-001 output dimension.
+    # (Keep in sync with what we store in DB; cosine similarity requires equal lengths.)
+    MAX_EMBEDDING_DIM = 3072
 
     def __init__(self) -> None:
         from ..gemini_backend.gemini_client import client as _gemini_client  # lazy
@@ -127,7 +161,7 @@ class VectorRetrievalService:
                 None,
                 lambda: self._client.models.embed_content(
                     model=self.EMBEDDING_MODEL,
-                    contents=query_text,
+                    contents=[query_text],
                 ),
             )
             embedding = result.embeddings[0].values if result.embeddings else None
@@ -145,15 +179,17 @@ class VectorRetrievalService:
         query_embedding: Optional[list[float]],
         query_text: str,
         limit: int = 5,
+        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+        content_filter: Optional[str] = None,
     ) -> list[RetrievedInterval]:
         """
-        Search VideoSubInterval and IntervalEmbedding tables for the given
-        project's video.  Returns up to `limit` results ranked by similarity.
+        Search VideoSubInterval table for the given project's video. Returns
+        up to `limit` results ranked by similarity.
 
         When `query_embedding` is None (embedding generation failed), falls
         back to returning the first N intervals as context.
         """
-        from ..models import Project, VideoSubInterval, IntervalEmbedding, VideoInterval
+        from ..models import Project, SubVideoIntervalEmbedding, VideoSubInterval
 
         # Resolve the video_id for this project
         project = db.query(Project).filter(Project.id == project_id).first()
@@ -164,76 +200,82 @@ class VectorRetrievalService:
         video_id: int = project.video_id
         results: list[RetrievedInterval] = []
 
+        if not content_filter:
+            content_filter = self.detect_content_type(query_text)
+
+        effective_threshold = (
+            min(similarity_threshold, CONTENT_SPECIFIC_THRESHOLD)
+            if content_filter
+            else similarity_threshold
+        )
+
         # ------------------------------------------------------------------
         # Search VideoSubInterval table
         # ------------------------------------------------------------------
         sub_intervals = (
-            db.query(VideoSubInterval)
+            db.query(VideoSubInterval, SubVideoIntervalEmbedding)
+            .outerjoin(
+                SubVideoIntervalEmbedding,
+                SubVideoIntervalEmbedding.sub_interval_id == VideoSubInterval.id,
+            )
             .filter(VideoSubInterval.video_id == video_id)
             .all()
         )
 
-        for si in sub_intervals:
-            embedding = _parse_embedding(si.embedding)
-            if query_embedding and embedding:
-                similarity = _cosine_similarity(query_embedding, embedding)
-            elif query_embedding is None:
-                # Fallback: use index-based pseudo-score so early intervals surface
-                similarity = 0.5
-            else:
-                similarity = 0.0
+        def _collect_subintervals(active_filter: Optional[str]) -> None:
+            for si, emb in sub_intervals:
+                if not self._matches_content_filter(
+                    {
+                        "camera_frame": si.camera_frame,
+                        "environment_background": si.environment_background,
+                        "people_figures": si.people_figures,
+                        "objects_props": si.objects_props,
+                        "text_symbols": si.text_symbols,
+                        "motion_changes": si.motion_changes,
+                        "lighting_color": si.lighting_color,
+                        "audio_visible_indicators": si.audio_visible_indicators,
+                        "occlusions_limits": si.occlusions_limits,
+                        "raw_combined_text": si.raw_combined_text,
+                    },
+                    active_filter,
+                ):
+                    continue
 
-            results.append(
-                RetrievedInterval(
-                    source="sub_interval",
-                    interval_id=si.interval_id,
-                    video_id=si.video_id,
-                    start_time_seconds=si.start_time_seconds,
-                    end_time_seconds=si.end_time_seconds,
-                    similarity=similarity,
-                    camera_frame=si.camera_frame,
-                    environment_background=si.environment_background,
-                    people_figures=si.people_figures,
-                    objects_props=si.objects_props,
-                    text_symbols=si.text_symbols,
-                    motion_changes=si.motion_changes,
-                    lighting_color=si.lighting_color,
-                    audio_visible_indicators=si.audio_visible_indicators,
-                    occlusions_limits=si.occlusions_limits,
-                    raw_combined_text=si.raw_combined_text,
+                embedding = _parse_embedding(emb.embedding if emb else None)
+                if query_embedding and embedding:
+                    similarity = _cosine_similarity(query_embedding, embedding)
+                    if similarity < effective_threshold:
+                        continue
+                elif query_embedding is None:
+                    # Fallback: use index-based pseudo-score so early intervals surface
+                    similarity = 0.5
+                else:
+                    similarity = 0.0
+
+                results.append(
+                    RetrievedInterval(
+                        source="sub_interval",
+                        interval_id=si.interval_id,
+                        video_id=si.video_id,
+                        start_time_seconds=si.start_time_seconds,
+                        end_time_seconds=si.end_time_seconds,
+                        similarity=similarity,
+                        camera_frame=si.camera_frame,
+                        environment_background=si.environment_background,
+                        people_figures=si.people_figures,
+                        objects_props=si.objects_props,
+                        text_symbols=si.text_symbols,
+                        motion_changes=si.motion_changes,
+                        lighting_color=si.lighting_color,
+                        audio_visible_indicators=si.audio_visible_indicators,
+                        occlusions_limits=si.occlusions_limits,
+                        raw_combined_text=si.raw_combined_text,
+                    )
                 )
-            )
 
-        # ------------------------------------------------------------------
-        # Search IntervalEmbedding table
-        # ------------------------------------------------------------------
-        interval_embeddings = (
-            db.query(IntervalEmbedding, VideoInterval)
-            .join(VideoInterval, IntervalEmbedding.interval_id == VideoInterval.id)
-            .filter(IntervalEmbedding.video_id == video_id)
-            .all()
-        )
-
-        for ie, vi in interval_embeddings:
-            embedding = _parse_embedding(ie.embedding)
-            if query_embedding and embedding:
-                similarity = _cosine_similarity(query_embedding, embedding)
-            elif query_embedding is None:
-                similarity = 0.45
-            else:
-                similarity = 0.0
-
-            results.append(
-                RetrievedInterval(
-                    source="interval_embedding",
-                    interval_id=vi.id,
-                    video_id=ie.video_id,
-                    start_time_seconds=vi.start_time_seconds,
-                    end_time_seconds=vi.end_time_seconds,
-                    similarity=similarity,
-                    combined_interval_text=ie.combined_interval_text,
-                )
-            )
+        _collect_subintervals(content_filter)
+        if not results and content_filter:
+            _collect_subintervals(None)
 
         # ------------------------------------------------------------------
         # Sort, de-duplicate by time window, apply limit
@@ -251,8 +293,47 @@ class VectorRetrievalService:
 
         return deduplicated
 
+    # ------------------------------------------------------------------
+    # Content filtering helpers
+    # ------------------------------------------------------------------
+
+    def detect_content_type(self, query: str) -> Optional[str]:
+        """Detect what type of content the user is asking about."""
+        query_lower = (query or "").lower()
+        for content_type, words in CONTENT_KEYWORDS.items():
+            if any(word in query_lower for word in words):
+                return content_type
+        return None
+
+    def _matches_content_filter(
+        self, interval_data: dict[str, Any], content_filter: Optional[str]
+    ) -> bool:
+        """Check if interval contains relevant content for the filter."""
+        if not content_filter:
+            return True
+
+        filter_map = {
+            "motion": ["motion_changes", "raw_combined_text"],
+            "camera": ["camera_frame"],
+            "environment": ["environment_background"],
+            "people": ["people_figures"],
+            "objects": ["objects_props"],
+            "lighting": ["lighting_color"],
+            "audio": ["audio_visible_indicators"],
+        }
+
+        relevant_fields = filter_map.get(content_filter.lower(), [])
+        for field in relevant_fields:
+            value = interval_data.get(field)
+            if value and len(value.strip()) > 10:
+                return True
+        return False
+
     def format_retrieved_context(
-        self, intervals: list[RetrievedInterval]
+        self,
+        intervals: list[RetrievedInterval],
+        *,
+        content_filter: Optional[str] = None,
     ) -> list[str]:
         """
         Convert RetrievedInterval objects into human-readable context strings
@@ -271,25 +352,50 @@ class VectorRetrievalService:
             lines: list[str] = [header]
 
             if r.source == "sub_interval":
-                for label, val in [
-                    ("Camera", r.camera_frame),
-                    ("Environment", r.environment_background),
-                    ("People", r.people_figures),
-                    ("Objects", r.objects_props),
-                    ("Text/Symbols", r.text_symbols),
-                    ("Motion", r.motion_changes),
-                    ("Lighting", r.lighting_color),
-                    ("Audio cues", r.audio_visible_indicators),
-                    ("Occlusions", r.occlusions_limits),
-                ]:
-                    if val:
-                        lines.append(f"  {label}: {val}")
-                if r.raw_combined_text:
-                    lines.append(f"  Summary: {r.raw_combined_text}")
+                filter_map = {
+                    "motion": [("Motion", r.motion_changes)],
+                    "camera": [("Camera", r.camera_frame)],
+                    "environment": [("Environment", r.environment_background)],
+                    "people": [("People", r.people_figures)],
+                    "objects": [("Objects", r.objects_props)],
+                    "lighting": [("Lighting", r.lighting_color)],
+                    "audio": [("Audio cues", r.audio_visible_indicators)],
+                }
+                if content_filter:
+                    field_list = filter_map.get(content_filter or "", [])
+                    for label, val in field_list:
+                        truncated = _truncate(val, MAX_FIELD_CHARS)
+                        if truncated:
+                            lines.append(f"  {label}: {truncated}")
+                elif r.raw_combined_text:
+                    summary = _truncate(r.raw_combined_text, MAX_CHUNK_CHARS)
+                    if summary:
+                        lines.append(f"  Summary: {summary}")
+                else:
+                    field_list = [
+                        ("Camera", r.camera_frame),
+                        ("Environment", r.environment_background),
+                        ("People", r.people_figures),
+                        ("Objects", r.objects_props),
+                        ("Text/Symbols", r.text_symbols),
+                        ("Motion", r.motion_changes),
+                        ("Lighting", r.lighting_color),
+                        ("Audio cues", r.audio_visible_indicators),
+                        ("Occlusions", r.occlusions_limits),
+                    ]
+                    for label, val in field_list:
+                        truncated = _truncate(val, MAX_FIELD_CHARS)
+                        if truncated:
+                            lines.append(f"  {label}: {truncated}")
             else:
                 if r.combined_interval_text:
-                    lines.append(f"  {r.combined_interval_text}")
+                    lines.append(
+                        f"  {_truncate(r.combined_interval_text, MAX_CHUNK_CHARS)}"
+                    )
 
-            chunks.append("\n".join(lines))
+            chunk = "\n".join(lines)
+            if len(chunk) > MAX_CHUNK_CHARS:
+                chunk = chunk[: max(0, MAX_CHUNK_CHARS - 3)].rstrip() + "..."
+            chunks.append(chunk)
 
         return chunks

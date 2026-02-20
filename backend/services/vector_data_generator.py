@@ -2,8 +2,8 @@
 vector_data_generator.py
 ~~~~~~~~~~~~~~~~~~~~~~~~
 Background service that generates structured video interval data via Gemini
-and inserts it into VideoInterval, VideoSubInterval, and IntervalEmbedding
-tables.
+and inserts it into VideoInterval, VideoSubInterval, and
+SubVideoIntervalEmbedding tables.
 
 The Gemini prompt is configurable via VECTOR_PROMPT_TEMPLATE in config or
 overridden at call-site. The JSON schema Gemini must return is documented
@@ -12,7 +12,7 @@ below and maps 1-to-1 with the ORM models.
 Expected Gemini JSON schema
 ----------------------------
 {
-  "intervals": [
+    "intervals": [
     {
       "interval_index": 0,          // int, 0-based
       "start_time_seconds": 0,      // int
@@ -32,7 +32,7 @@ Expected Gemini JSON schema
           "audio_visible_indicators": "...",     // str | null
           "occlusions_limits": "...",            // str | null
           "raw_combined_text": "...",            // str | null
-          "embedding": [0.1, 0.2, ...]          // list[float] | null
+          "embedding": [0.1, 0.2, ...]          // list[float] | null (stored in sub_video_interval_embeddings)
         }
       ],
       "combined_interval_text": "...",           // str | null  (for IntervalEmbedding)
@@ -48,7 +48,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -265,6 +265,68 @@ def _parse_intervals_json(text: str) -> Dict[str, Any]:
     return data
 
 
+def _build_subinterval_text(sub_dict: Dict[str, Any]) -> str:
+    """Create a deterministic text summary from sub-interval fields."""
+    parts: List[str] = []
+    for label, key in [
+        ("Camera", "camera_frame"),
+        ("Environment", "environment_background"),
+        ("People", "people_figures"),
+        ("Objects", "objects_props"),
+        ("Text", "text_symbols"),
+        ("Motion", "motion_changes"),
+        ("Lighting", "lighting_color"),
+        ("Audio", "audio_visible_indicators"),
+        ("Occlusions", "occlusions_limits"),
+    ]:
+        value = sub_dict.get(key)
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if cleaned:
+                parts.append(f"{label}: {cleaned}")
+    return "\n".join(parts)
+
+
+async def _embed_texts(texts: List[str]) -> List[Optional[List[float]]]:
+    """
+    Generate Gemini text embeddings for a list of strings.
+    Returns a list aligned to `texts`, with None for any failed item.
+    """
+    if not texts:
+        return []
+
+    from ..gemini_backend.gemini_client import client as _gemini_client  # lazy
+
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: _gemini_client.models.embed_content(
+                model="gemini-embedding-001",
+                contents=texts,
+            ),
+        )
+    except Exception as exc:
+        logger.warning("[VectorGen] Embedding generation failed: %s", exc)
+        return [None] * len(texts)
+
+    embeddings: List[Optional[List[float]]] = []
+    if not getattr(result, "embeddings", None):
+        return [None] * len(texts)
+
+    for emb in result.embeddings:
+        values = getattr(emb, "values", None)
+        if values:
+            embeddings.append(list(values))
+        else:
+            embeddings.append(None)
+
+    if len(embeddings) < len(texts):
+        embeddings.extend([None] * (len(texts) - len(embeddings)))
+
+    return embeddings
+
+
 # ---------------------------------------------------------------------------
 # Core DB insertion logic (sync, runs inside executor)
 # ---------------------------------------------------------------------------
@@ -277,9 +339,10 @@ def _insert_vector_data(
 ) -> None:
     """
     Insert parsed interval data into VideoInterval, VideoSubInterval, and
-    IntervalEmbedding tables.  Skips records that already exist (idempotent).
+    SubVideoIntervalEmbedding tables. Skips records that already exist
+    (idempotent).
     """
-    from ..models import VideoInterval, VideoSubInterval, IntervalEmbedding  # noqa: E402
+    from ..models import VideoInterval, VideoSubInterval, SubVideoIntervalEmbedding  # noqa: E402
 
     for interval_dict in intervals_data:
         interval_index = int(interval_dict.get("interval_index", 0))
@@ -309,32 +372,6 @@ def _insert_vector_data(
             db.flush()  # get db_interval.id
 
         # ------------------------------------------------------------------
-        # Upsert IntervalEmbedding
-        # ------------------------------------------------------------------
-        combined_text = interval_dict.get("combined_interval_text")
-        interval_embedding = _serialize_embedding(
-            interval_dict.get("interval_embedding")
-        )
-
-        existing_embedding = (
-            db.query(IntervalEmbedding)
-            .filter(
-                IntervalEmbedding.video_id == video_id,
-                IntervalEmbedding.interval_id == db_interval.id,
-            )
-            .first()
-        )
-        if not existing_embedding:
-            db.add(
-                IntervalEmbedding(
-                    video_id=video_id,
-                    interval_id=db_interval.id,
-                    combined_interval_text=combined_text,
-                    embedding=interval_embedding,
-                )
-            )
-
-        # ------------------------------------------------------------------
         # Upsert VideoSubIntervals
         # ------------------------------------------------------------------
         for sub_dict in interval_dict.get("sub_intervals", []):
@@ -348,31 +385,53 @@ def _insert_vector_data(
                 )
                 .first()
             )
+            serialized_embedding = _serialize_embedding(sub_dict.get("embedding"))
             if existing_sub:
+                if serialized_embedding:
+                    existing_embedding = (
+                        db.query(SubVideoIntervalEmbedding)
+                        .filter(
+                            SubVideoIntervalEmbedding.sub_interval_id
+                            == existing_sub.id
+                        )
+                        .first()
+                    )
+                    if not existing_embedding:
+                        db.add(
+                            SubVideoIntervalEmbedding(
+                                sub_interval_id=existing_sub.id,
+                                embedding=serialized_embedding,
+                            )
+                        )
                 continue  # skip duplicate
 
-            db.add(
-                VideoSubInterval(
-                    interval_id=db_interval.id,
-                    video_id=video_id,
-                    sub_index=int(sub_dict.get("sub_index", 0)),
-                    start_time_seconds=sub_start,
-                    end_time_seconds=int(
-                        sub_dict.get("end_time_seconds", sub_start + 20)
-                    ),
-                    camera_frame=sub_dict.get("camera_frame"),
-                    environment_background=sub_dict.get("environment_background"),
-                    people_figures=sub_dict.get("people_figures"),
-                    objects_props=sub_dict.get("objects_props"),
-                    text_symbols=sub_dict.get("text_symbols"),
-                    motion_changes=sub_dict.get("motion_changes"),
-                    lighting_color=sub_dict.get("lighting_color"),
-                    audio_visible_indicators=sub_dict.get("audio_visible_indicators"),
-                    occlusions_limits=sub_dict.get("occlusions_limits"),
-                    raw_combined_text=sub_dict.get("raw_combined_text"),
-                    embedding=_serialize_embedding(sub_dict.get("embedding")),
-                )
+            new_sub = VideoSubInterval(
+                interval_id=db_interval.id,
+                video_id=video_id,
+                sub_index=int(sub_dict.get("sub_index", 0)),
+                start_time_seconds=sub_start,
+                end_time_seconds=int(sub_dict.get("end_time_seconds", sub_start + 20)),
+                camera_frame=sub_dict.get("camera_frame"),
+                environment_background=sub_dict.get("environment_background"),
+                people_figures=sub_dict.get("people_figures"),
+                objects_props=sub_dict.get("objects_props"),
+                text_symbols=sub_dict.get("text_symbols"),
+                motion_changes=sub_dict.get("motion_changes"),
+                lighting_color=sub_dict.get("lighting_color"),
+                audio_visible_indicators=sub_dict.get("audio_visible_indicators"),
+                occlusions_limits=sub_dict.get("occlusions_limits"),
+                raw_combined_text=sub_dict.get("raw_combined_text"),
             )
+            db.add(new_sub)
+            db.flush()  # get new_sub.id
+
+            if serialized_embedding:
+                db.add(
+                    SubVideoIntervalEmbedding(
+                        sub_interval_id=new_sub.id,
+                        embedding=serialized_embedding,
+                    )
+                )
 
     db.commit()
 
@@ -493,6 +552,27 @@ async def generate_vector_data_for_project(
             len(intervals_list),
             project_id,
         )
+
+        # ------------------------------------------------------------------
+        # Ensure sub-interval embeddings exist (fallback to embedding API)
+        # ------------------------------------------------------------------
+        sub_texts: List[str] = []
+        sub_targets: List[Tuple[Dict[str, Any], str]] = []
+        for interval in intervals_list:
+            for sub in interval.get("sub_intervals", []) or []:
+                sub_raw_text = sub.get("raw_combined_text")
+                if not sub_raw_text:
+                    sub_raw_text = _build_subinterval_text(sub)
+                    if sub_raw_text:
+                        sub["raw_combined_text"] = sub_raw_text
+                if sub_raw_text and not sub.get("embedding"):
+                    sub_texts.append(sub_raw_text)
+                    sub_targets.append((sub, "embedding"))
+
+        if sub_texts:
+            sub_embeddings = await _embed_texts(sub_texts)
+            for (target, key), emb in zip(sub_targets, sub_embeddings):
+                target[key] = emb
 
         # ------------------------------------------------------------------
         # Insert into DB (runs synchronously; wrap in executor for async safety)

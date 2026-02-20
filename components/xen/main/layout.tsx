@@ -60,8 +60,8 @@ export default function Layout({ children }: LayoutProps) {
     { text: "Initializing video analysis" },
     { text: "Downloading video" },
     { text: "Extracting comments" },
-    { text: "Running Gemini analysis" },
-    { text: "Creating project" },
+    { text: "Uploading video for overview" },
+    { text: "Generating overview" },
     { text: "Opening Streamline" },
   ])
 

@@ -1,7 +1,6 @@
 "use client"
 
-import React from "react"
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { useGlobalLoader } from "@/components/xen/main/layout"
@@ -30,6 +29,7 @@ import FloatingVideoChat from "@/components/xen/floating-chat-bar"
 import ChatMessage from "@/components/xen/chat/chatmassegeui"
 import ChatInput from "@/components/xen/chat/chatinputui"
 import EmotionalIntensityGraph from "@/components/xen/streamline/statistics-components/emotional-anal"
+import VideoPlayerModal from "@/components/xen/streamline/video-player-modal"
 
 type ProjectOverview = {
   project_id: number
@@ -48,12 +48,42 @@ type ProjectOverview = {
   status: "not_started" | "pending" | "completed" | "failed" | string
 }
 
+type VectorStatus = {
+  project_id: number
+  status: "not_started" | "pending" | "completed" | "failed" | string
+  started_at: string | null
+  completed_at: string | null
+  error: string | null
+}
+
 const Skeleton = ({ className }: { className?: string }) => {
   return <div className={cn("animate-pulse rounded-md", className)} />
 }
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
+
+const getThumbnailUrl = (videoUrl?: string | null) => {
+  if (!videoUrl) return undefined
+  try {
+    const u = new URL(videoUrl)
+    const host = u.hostname.toLowerCase()
+
+    if (host === "youtu.be") {
+      const id = u.pathname.replace("/", "").trim()
+      return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : undefined
+    }
+
+    if (host.endsWith("youtube.com")) {
+      const id = u.searchParams.get("v")
+      return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : undefined
+    }
+  } catch {
+    return undefined
+  }
+
+  return undefined
+}
 
 const toptabs = [
   { id: "overview", label: "Video Overview", icon: MessageCircle },
@@ -130,7 +160,7 @@ const currentProject = {
   duration: "28:14",
   videoLink: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
   platform: "YouTube",
-  thumbnail: "/images/design-mode/Screenshot%202025-05-08%20133020(1).png"
+  thumbnail: getThumbnailUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ") || "/images/design-mode/Screenshot%202025-05-08%20133020(1).png"
 }
 
 function StreamlineSkeleton({ isDark }: { isDark: boolean }) {
@@ -243,11 +273,73 @@ export default function Streamline() {
   const projectId = searchParams.get("projectId")
   const forwardedVideoUrl = searchParams.get("videoUrl")
   const [resolvedVideoLink, setResolvedVideoLink] = useState<string>(forwardedVideoUrl || currentProject.videoLink)
+  const [dynamicThumbnail, setDynamicThumbnail] = useState<string>(
+    getThumbnailUrl(forwardedVideoUrl || currentProject.videoLink) || currentProject.thumbnail
+  )
+  const [videoTitle, setVideoTitle] = useState<string>("GreenLeaf // Basepoint")
+  const [projectCreatedDate, setProjectCreatedDate] = useState<string>(new Date().toISOString().split('T')[0])
   const [isProjectLoading, setIsProjectLoading] = useState<boolean>(!!projectId)
+
+  // Update dynamic thumbnail when video link changes
+  useEffect(() => {
+    const newThumbnail = getThumbnailUrl(resolvedVideoLink) || currentProject.thumbnail
+    setDynamicThumbnail(newThumbnail)
+  }, [resolvedVideoLink])
+
+  // Function to fetch YouTube video title
+  const fetchYouTubeTitle = async (videoUrl: string): Promise<string> => {
+    try {
+      const url = new URL(videoUrl)
+      let videoId = ''
+      
+      if (url.hostname === 'youtu.be') {
+        videoId = url.pathname.replace('/', '').trim()
+      } else if (url.hostname.includes('youtube.com')) {
+        videoId = url.searchParams.get('v') || ''
+      }
+      
+      if (!videoId) return "GreenLeaf // Basepoint"
+      
+      // Use YouTube oEmbed API to get video title
+      const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
+      const response = await fetch(oEmbedUrl)
+      
+      if (response.ok) {
+        const data = await response.json()
+        return data.title || "GreenLeaf // Basepoint"
+      }
+    } catch (error) {
+      console.error('Error fetching YouTube title:', error)
+    }
+    
+    return "GreenLeaf // Basepoint"
+  }
+
+  // Update video title when video link changes
+  useEffect(() => {
+    const updateTitle = async () => {
+      if (resolvedVideoLink && resolvedVideoLink !== currentProject.videoLink) {
+        const title = await fetchYouTubeTitle(resolvedVideoLink)
+        setVideoTitle(title)
+      }
+    }
+    
+    updateTitle()
+  }, [resolvedVideoLink])
+
+  // Update project creation date when new project is initiated
+  useEffect(() => {
+    if (projectId || forwardedVideoUrl) {
+      setProjectCreatedDate(new Date().toISOString().split('T')[0])
+    }
+  }, [projectId, forwardedVideoUrl])
 
   const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
   const [overviewError, setOverviewError] = useState<string | null>(null)
   const [isOverviewLoading, setIsOverviewLoading] = useState<boolean>(false)
+  const [vectorStatus, setVectorStatus] = useState<VectorStatus | null>(null)
+  const [vectorStatusError, setVectorStatusError] = useState<string | null>(null)
+  const vectorTriggerRequested = React.useRef(false)
 
   useEffect(() => {
     const run = async () => {
@@ -325,9 +417,77 @@ export default function Streamline() {
     }
   }, [projectId])
 
+  useEffect(() => {
+    if (!projectId) {
+      setVectorStatus(null)
+      setVectorStatusError(null)
+      return
+    }
+
+    let cancelled = false
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+    const fetchVectorStatus = async () => {
+      if (cancelled) return
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/vector-status`,
+          { cache: "no-store" }
+        )
+        if (!res.ok) {
+          throw new Error(`Failed to load vector status (${res.status})`)
+        }
+        const data = (await res.json()) as VectorStatus
+        if (cancelled) return
+        setVectorStatus(data)
+        setVectorStatusError(null)
+
+        if (data?.status === "pending" || data?.status === "not_started") {
+          pollTimer = setTimeout(fetchVectorStatus, 3000)
+        }
+      } catch (e: any) {
+        if (cancelled) return
+        setVectorStatusError(e?.message || "Failed to load vector status")
+      }
+    }
+
+    fetchVectorStatus()
+
+    return () => {
+      cancelled = true
+      if (pollTimer) clearTimeout(pollTimer)
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    vectorTriggerRequested.current = false
+  }, [projectId])
+
+  useEffect(() => {
+    if (!projectId) return
+    if (vectorTriggerRequested.current) return
+    if (projectOverview?.status !== "completed") return
+    if (vectorStatus?.status !== "not_started") return
+
+    const triggerVectorGeneration = async () => {
+      try {
+        vectorTriggerRequested.current = true
+        await fetch(
+          `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/generate-vector-data`,
+          { method: "POST" }
+        )
+      } catch {
+        vectorTriggerRequested.current = false
+      }
+    }
+
+    triggerVectorGeneration()
+  }, [projectId, projectOverview?.status, vectorStatus?.status])
+
   const [isDark, setIsDark] = useState(true)
   const [activeTab, setActiveTab] = useState("transcript")
   const [activeTopTab, setActiveTopTab] = useState("overview")
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false)
   const [editorMessages, setEditorMessages] = useState([
     { id: 1, content: "Hi! I'm your AI video editor assistant. How can I help you edit this video today?", isUser: false },
   ])
@@ -505,6 +665,22 @@ export default function Streamline() {
     }
   }, [isDark])
 
+  const vectorStatusLabel = React.useMemo(() => {
+    if (!vectorStatus?.status) return null
+    switch (vectorStatus.status) {
+      case "completed":
+        return "Vector index ready"
+      case "failed":
+        return "Vector index failed"
+      case "pending":
+        return "Building vector index"
+      case "not_started":
+        return "Vector index queued"
+      default:
+        return `Vector index: ${vectorStatus.status}`
+    }
+  }, [vectorStatus])
+
   const handleSendMessage = (message: string) => {
     // Add user message
     setEditorMessages(prev => [...prev, { id: Date.now(), content: message, isUser: true }])
@@ -536,21 +712,10 @@ export default function Streamline() {
             <>
               <div className="flex items-center justify-between">
                 <h1 className={cn("text-2xl font-bold", isDark ? "text-white" : "text-gray-900")}>
-                  GreenLeaf // Basepoint
+                  {videoTitle}
                 </h1>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    className={cn(
-                      "px-3 py-1 text-xs font-medium rounded transition-colors",
-                      isDark
-                        ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                        : "bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200"
-                    )}
-                  >
-                    ★
-                  </button>
-
                   <button
                     onClick={() => setIsDark(!isDark)}
                     className={cn(
@@ -568,13 +733,30 @@ export default function Streamline() {
               <div className={cn("flex items-center gap-4 text-sm", isDark ? "text-zinc-400" : "text-gray-500")}>
                 <div className="flex items-center gap-1">
                   <Calendar className="h-4 w-4" />
-                  <span>{currentProject?.lastModified}</span>
+                  <span>{projectCreatedDate}</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
-                  <span>{currentProject?.duration}</span>
-                </div>
+                {vectorStatusLabel && (
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={cn(
+                        "h-2 w-2 rounded-full",
+                        vectorStatus?.status === "completed"
+                          ? "bg-green-500"
+                          : vectorStatus?.status === "failed"
+                            ? "bg-red-500"
+                            : "bg-amber-500"
+                      )}
+                    />
+                    <span>{vectorStatusLabel}</span>
+                  </div>
+                )}
               </div>
+
+              {vectorStatusError && (
+                <div className={cn("text-xs mt-2", isDark ? "text-red-300" : "text-red-600")}>
+                  {vectorStatusError}
+                </div>
+              )}
             </>
           ) : (
             // Video info card for all other tabs
@@ -586,9 +768,14 @@ export default function Streamline() {
                 {/* Video Thumbnail */}
                 <div className="relative w-32 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-black">
                   <img
-                    src={currentProject.thumbnail}
+                    src={dynamicThumbnail}
                     alt="Video thumbnail"
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      // Fallback to placeholder if thumbnail fails
+                      const target = e.target as HTMLImageElement
+                      target.src = "/images/design-mode/Screenshot%202025-05-08%20133020(1).png"
+                    }}
                   />
                   
                 </div>
@@ -699,11 +886,19 @@ export default function Streamline() {
 
               {/* Video Player */}
               <Card className={cn("overflow-hidden", isDark ? "border-zinc-800 bg-zinc-900/50" : "border-gray-200 bg-white")}>
-                <div className="aspect-video bg-black relative group">
+                <div 
+                  className="aspect-video bg-black relative group cursor-pointer"
+                  onClick={() => setIsVideoModalOpen(true)}
+                >
                   <img
-                    src="/images/design-mode/Screenshot%202025-05-08%20133020(1).png"
-                    alt="Video"
+                    src={dynamicThumbnail}
+                    alt={`${currentProject.name} thumbnail`}
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      // Fallback to placeholder if thumbnail fails
+                      const target = e.target as HTMLImageElement
+                      target.src = "/images/design-mode/Screenshot%202025-05-08%20133020(1).png"
+                    }}
                   />
                   {/* Hover play overlay */}
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
@@ -858,6 +1053,15 @@ export default function Streamline() {
             ]}
           />
         )}
+
+        {/* Video Player Modal */}
+        <VideoPlayerModal
+          open={isVideoModalOpen}
+          onClose={() => setIsVideoModalOpen(false)}
+          title={currentProject.name}
+          src={resolvedVideoLink}
+          poster={dynamicThumbnail}
+        />
           </>
         )}
       </div>

@@ -22,9 +22,9 @@ from ..extractor.comments_extractor import CommentsExtractor
 # Import database dependencies and models
 from ..dependencies import get_db
 from ..models import Project, User, ProjectStatistics, ProjectOverview, Video
-from ..services.vector_data_generator import generate_vector_data_for_project
 from ..gemini_backend.config import GEMINI_API_KEY
 from ..services.project_overview_generator import ProjectOverviewGenerator
+from ..services.vector_data_generator import generate_vector_data_for_project
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -265,7 +265,7 @@ async def analyze_from_url(
 
             project_id: int | None = None
             if project_name:
-                _set_progress(job_id_, step=4, text="Creating project")
+                _set_progress(job_id_, step=4, text="Generating overview")
 
                 # Create or get user
                 user = db2.query(User).filter(User.id == 1).first()
@@ -318,13 +318,6 @@ async def analyze_from_url(
                     await _generate_overview_sync(project_id)
                 except Exception as e:
                     logger.warning(f"Overview generation failed (non-critical): {e}")
-
-                # Trigger vector data generation in background
-                try:
-                    asyncio.create_task(generate_vector_data_for_project(project_id))
-                    logger.info(f"Vector data generation triggered for project {project_id}")
-                except Exception as e:
-                    logger.warning(f"Vector data generation trigger failed (non-critical): {e}")
 
             _set_progress(job_id_, status="completed", step=5, text="Opening Streamline", project_id=project_id)
         except Exception as e:

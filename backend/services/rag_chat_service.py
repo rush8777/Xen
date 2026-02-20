@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 
 from ..gemini_backend.gemini_client import client
 from ..models import Project
-from ..services.vector_retrieval_service import VectorRetrievalService
+from ..services.vector_retrieval_service import (
+    CONTENT_SPECIFIC_THRESHOLD,
+    DEFAULT_SIMILARITY_THRESHOLD,
+    VectorRetrievalService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +31,7 @@ class RagChatService:
     Retrieval flow:
       1. Generate a Gemini text embedding for the user query.
       2. Run cosine similarity search across VideoSubInterval +
-         IntervalEmbedding tables for the project's video.
+         SubVideoIntervalEmbedding tables for the project's video.
       3. Rank and format the top-N matching intervals as context.
       4. Inject context into Gemini system prompt and generate reply.
 
@@ -66,26 +70,47 @@ class RagChatService:
             query_embedding = await self._retrieval.generate_query_embedding(query)
 
             # 2. Search vector DB
+            content_filter = self._retrieval.detect_content_type(query)
+            similarity_threshold = (
+                CONTENT_SPECIFIC_THRESHOLD
+                if content_filter
+                else DEFAULT_SIMILARITY_THRESHOLD
+            )
             intervals = self._retrieval.search_similar_intervals(
                 db=db,
                 project_id=project_id,
                 query_embedding=query_embedding,
                 query_text=query,
                 limit=MAX_CONTEXT_CHUNKS,
+                similarity_threshold=similarity_threshold,
+                content_filter=content_filter,
             )
 
             if not intervals:
                 return [], False
 
             # 3. Format context chunks
-            chunks = self._retrieval.format_retrieved_context(intervals)
+            chunks = self._retrieval.format_retrieved_context(
+                intervals,
+                content_filter=content_filter,
+            )
 
             # 4. Enforce character budget
             truncated: list[str] = []
             total = 0
             for chunk in chunks:
-                if total + len(chunk) > MAX_CONTEXT_CHARS:
+                remaining = MAX_CONTEXT_CHARS - total
+                if remaining <= 0:
                     break
+
+                # If a single chunk is too large, include a truncated version rather
+                # than dropping all context (which would disable RAG entirely).
+                if len(chunk) > remaining:
+                    if not truncated:
+                        truncated.append(chunk[:remaining])
+                        total += remaining
+                    break
+
                 truncated.append(chunk)
                 total += len(chunk)
 
@@ -115,12 +140,12 @@ class RagChatService:
         messages: list[dict[str, Any]],
         user_message: str,
         db: Session,
-    ) -> tuple[str, bool, int]:
+    ) -> tuple[str, bool, int, list[str]]:
         """
         Generate an assistant reply with RAG context injection.
 
         Returns:
-            (reply_text, rag_was_active, context_chunks_used)
+            (reply_text, rag_was_active, context_chunks_used, context_chunks)
         """
         context_chunks, rag_active = await self.retrieve_project_context_async(
             project_id=project.id,
@@ -154,7 +179,7 @@ class RagChatService:
         if not text:
             raise ValueError("Empty response from Gemini")
 
-        return text, rag_active, len(context_chunks)
+        return text, rag_active, len(context_chunks), context_chunks
 
     def generate_reply(
         self,
@@ -175,7 +200,7 @@ class RagChatService:
             try:
                 loop = asyncio.new_event_loop()
                 try:
-                    text, _, _ = loop.run_until_complete(
+                    text, _, _, _ = loop.run_until_complete(
                         self.generate_reply_async(
                             project=project,
                             messages=messages,
@@ -303,3 +328,4 @@ class RagChatService:
         if not text:
             raise ValueError("Empty response from Gemini")
         return text
+

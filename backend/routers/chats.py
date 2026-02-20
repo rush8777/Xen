@@ -64,6 +64,7 @@ class ChatSessionResponse(BaseModel):
     messages: list[ChatMessageDTO]
     rag_active: bool = False
     context_chunks_used: int = 0
+    context_chunks: list[str] = []
 
 
 _MENTION_RE = re.compile(r"@([^\n@]+)")
@@ -73,6 +74,7 @@ def _extract_project_name_from_message(message: str) -> str | None:
     """
     Extract first '@Project Name' mention.
     We allow spaces; capture stops at newline or another '@'.
+    For multi-word names, we need to find the actual project name in the database.
     """
     if not message:
         return None
@@ -84,26 +86,66 @@ def _extract_project_name_from_message(message: str) -> str | None:
     raw = (match.group(1) or "").strip()
     # Trim trailing punctuation (common when users type '@Project!' etc.)
     raw = raw.rstrip(" \t\r\n.,;:!?)]}\"'")
+    
+    # If there are multiple words, try to find the longest matching project name
+    words = raw.split()
+    if len(words) == 1:
+        return raw or None
+    
+    # For multi-word potential names, we need to find the actual project name
+    # by checking against existing projects in the database
+    # This will be handled in _resolve_project_by_name with smart matching
     return raw or None
 
 
 def _resolve_project_by_name(*, db: Session, project_name: str, user_id: int | None) -> Project:
-    q = db.query(Project).filter(func.lower(Project.name) == project_name.lower())
+    # Get all projects to check against
+    q = db.query(Project)
     if user_id is not None:
         q = q.filter(Project.user_id == user_id)
-
-    projects = q.all()
-    if not projects:
-        raise HTTPException(
-            status_code=404,
-            detail=f'Project not found for "@{project_name}". Make sure the name matches exactly.',
-        )
-    if len(projects) > 1:
-        raise HTTPException(
-            status_code=400,
-            detail=f'Ambiguous project name "@{project_name}" (multiple matches). Please rename projects to be unique.',
-        )
-    return projects[0]
+    all_projects = q.all()
+    
+    # First try exact match
+    for project in all_projects:
+        if project.name.lower() == project_name.lower():
+            return project
+    
+    # If no exact match, try to find the project name within the extracted text
+    # This handles cases like "@Mock recording Summarize this project"
+    # where "Mock recording" is the actual project name
+    for project in all_projects:
+        project_lower = project.name.lower()
+        extracted_lower = project_name.lower()
+        
+        # Check if project name is at the start of extracted text
+        if extracted_lower.startswith(project_lower):
+            return project
+        
+        # Check if project name is contained within extracted text
+        if project_lower in extracted_lower:
+            # Make sure it's a word boundary match
+            start_idx = extracted_lower.find(project_lower)
+            # Check if it's at word boundaries
+            before_ok = (start_idx == 0 or extracted_lower[start_idx-1].isspace())
+            after_end = start_idx + len(project_lower)
+            after_ok = (after_end >= len(extracted_lower) or extracted_lower[after_end].isspace() or 
+                       extracted_lower[after_end] in '.,;:!?)]}\'"')
+            
+            if before_ok and after_ok:
+                return project
+    
+    # Try progressively shorter versions of the extracted name
+    words = project_name.split()
+    for i in range(len(words), 0, -1):
+        partial_name = " ".join(words[:i])
+        for project in all_projects:
+            if project.name.lower() == partial_name.lower():
+                return project
+    
+    raise HTTPException(
+        status_code=404,
+        detail=f'Project not found for "@{project_name}". Available projects: {", ".join([f"{p.name}" for p in all_projects])}',
+    )
 
 
 @router.post("/projects/{project_id}/chats", response_model=ChatResponse, status_code=201)
@@ -259,8 +301,9 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
     # Generate assistant reply via RAG pipeline
     rag_active = False
     context_chunks_used = 0
+    context_chunks: list[str] = []
     try:
-        assistant_text, rag_active, context_chunks_used = await rag.generate_reply_async(
+        assistant_text, rag_active, context_chunks_used, context_chunks = await rag.generate_reply_async(
             project=project, messages=history, user_message=message, db=db
         )
     except Exception as e:
@@ -295,6 +338,7 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
         messages=messages,
         rag_active=rag_active,
         context_chunks_used=context_chunks_used,
+        context_chunks=context_chunks or [],
     )
 
 
@@ -338,5 +382,4 @@ def delete_chat(chat_id: int, db: Session = Depends(get_db)) -> dict:
     db.commit()
 
     return {"status": "ok"}
-
 

@@ -55,7 +55,7 @@ if DB_PATH.startswith("sqlite:///"):
         """)
         print("Created video_intervals table.")
         
-        # Create video_sub_intervals table
+        # Create video_sub_intervals table (no embeddings here)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS video_sub_intervals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +74,6 @@ if DB_PATH.startswith("sqlite:///"):
                 audio_visible_indicators TEXT,
                 occlusions_limits TEXT,
                 raw_combined_text TEXT,
-                embedding TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (interval_id) REFERENCES video_intervals(id),
                 FOREIGN KEY (video_id) REFERENCES videos(id),
@@ -82,6 +81,29 @@ if DB_PATH.startswith("sqlite:///"):
             )
         """)
         print("Created video_sub_intervals table.")
+
+        # Create sub_video_interval_embeddings table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sub_video_interval_embeddings (
+                sub_interval_id INTEGER PRIMARY KEY,
+                embedding TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sub_interval_id) REFERENCES video_sub_intervals(id)
+            )
+        """)
+        print("Created sub_video_interval_embeddings table.")
+
+        # Migrate existing embeddings if legacy column exists
+        cursor.execute("PRAGMA table_info(video_sub_intervals)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "embedding" in columns:
+            cursor.execute("""
+                INSERT OR IGNORE INTO sub_video_interval_embeddings (sub_interval_id, embedding)
+                SELECT id, embedding
+                FROM video_sub_intervals
+                WHERE embedding IS NOT NULL AND embedding != ''
+            """)
+            print("Migrated existing sub-interval embeddings.")
         
         # Create interval_embeddings table
         cursor.execute("""
@@ -104,6 +126,7 @@ if DB_PATH.startswith("sqlite:///"):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_video_sub_intervals_interval_id ON video_sub_intervals(interval_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_interval_embeddings_video_id ON interval_embeddings(video_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_interval_embeddings_interval_id ON interval_embeddings(interval_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sub_video_interval_embeddings_sub_interval_id ON sub_video_interval_embeddings(sub_interval_id)")
         print("Created indexes.")
         
         conn.commit()

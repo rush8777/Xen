@@ -1,6 +1,6 @@
 "use client"
 
-import { Copy, ThumbsUp, ThumbsDown, RotateCcw, Share2, Settings, Sparkles, Database } from "lucide-react";
+import { Copy, ThumbsUp, ThumbsDown, RotateCcw, Share2, Settings, Sparkles, Database, PanelRight } from "lucide-react";
 import { useSidebarContext } from "../main/layout";
 
 interface ChatMessageProps {
@@ -14,10 +14,12 @@ interface ChatMessageProps {
 interface TopBarProps {
   onNewChat?: () => void;
   ragActive?: boolean;
+  onToggleContext?: () => void;
+  contextOpen?: boolean;
 }
 
 // ── Top Bar ────────────────────────────────────────────────────────────────────
-const TopBar = ({ onNewChat, ragActive }: TopBarProps) => {
+const TopBar = ({ onNewChat, ragActive, onToggleContext, contextOpen }: TopBarProps) => {
   const { isSidebarExpanded } = useSidebarContext()
   
   return (
@@ -40,6 +42,18 @@ const TopBar = ({ onNewChat, ragActive }: TopBarProps) => {
 
       {/* Right – actions */}
       <div className="flex items-center gap-1.5">
+        {/* Retrieved Context */}
+        <button
+          onClick={onToggleContext}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-zinc-300 text-xs font-medium hover:bg-zinc-800 transition-colors border ${
+            contextOpen ? "border-zinc-600/70 bg-zinc-900/60" : "border-transparent hover:border-zinc-700/50"
+          }`}
+          title="Show retrieved context"
+        >
+          <span>Context</span>
+          <PanelRight className="w-3.5 h-3.5 text-zinc-400" />
+        </button>
+
         {/* Configuration */}
         <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-zinc-300 text-xs font-medium hover:bg-zinc-800 transition-colors border border-transparent hover:border-zinc-700/50">
           <span>Configuration</span>

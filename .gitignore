@@ -70,3 +70,9 @@ inspect_*.py
 
 # backup files
 *.backup
+
+# database inspector
+database-inspector/
+
+# help folder with utilities and helper files
+help/

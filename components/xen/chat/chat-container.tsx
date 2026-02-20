@@ -25,6 +25,8 @@ const ChatContainer = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [chatId, setChatId] = useState<number | null>(null)
   const [ragActive, setRagActive] = useState(false)
+  const [contextOpen, setContextOpen] = useState(false)
+  const [contextChunks, setContextChunks] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -67,10 +69,12 @@ const ChatContainer = () => {
         messages: Array<{ role: string; content: string }>
         rag_active?: boolean
         context_chunks_used?: number
+        context_chunks?: string[]
       } = await res.json()
 
       setChatId(data.chat_id)
       setRagActive(!!data.rag_active)
+      setContextChunks(Array.isArray(data.context_chunks) ? data.context_chunks : [])
 
       const assistant = [...(data.messages || [])].reverse().find(m => m.role === "assistant")
       const aiMessage: Message = {
@@ -115,6 +119,8 @@ const ChatContainer = () => {
     setIsLoading(false)
     setChatId(null)
     setRagActive(false)
+    setContextOpen(false)
+    setContextChunks([])
   }
 
   return (
@@ -125,11 +131,54 @@ const ChatContainer = () => {
         <>
           {/* Top Bar - Fixed at very top, full width */}
           <div className="fixed top-0 left-0 right-0 z-20">
-            <TopBar onNewChat={handleNewChat} ragActive={ragActive} />
+            <TopBar
+              onNewChat={handleNewChat}
+              ragActive={ragActive}
+              contextOpen={contextOpen}
+              onToggleContext={() => setContextOpen(v => !v)}
+            />
           </div>
+
+          {/* Retrieved Context Side Window */}
+          {contextOpen && (
+            <div className="fixed top-10 right-0 bottom-0 z-30 w-full md:w-[360px] bg-[#0B0B0E] border-l border-zinc-800/70">
+              <div className="h-full flex flex-col">
+                <div className="px-4 py-3 border-b border-zinc-800/70 flex items-center justify-between">
+                  <div className="text-zinc-200 text-xs font-semibold tracking-tight">Retrieved context</div>
+                  <button
+                    onClick={() => setContextOpen(false)}
+                    className="text-zinc-400 text-xs hover:text-zinc-200 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-4 py-3">
+                  {!ragActive && (
+                    <div className="text-zinc-500 text-xs leading-relaxed">
+                      RAG is currently inactive for the last response.
+                    </div>
+                  )}
+                  {ragActive && contextChunks.length === 0 && (
+                    <div className="text-zinc-500 text-xs leading-relaxed">
+                      No context chunks were returned.
+                    </div>
+                  )}
+                  {contextChunks.map((chunk, idx) => (
+                    <div key={idx} className="mb-3">
+                      <div className="text-[10px] text-zinc-500 mb-1">Chunk {idx + 1}</div>
+                      <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-200 bg-zinc-950/40 border border-zinc-800/60 rounded-lg p-3">
+                        {chunk}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           
           {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 pt-12 pb-32">
+          <div className={`flex-1 overflow-y-auto px-6 py-4 pt-12 pb-32 ${contextOpen ? "md:pr-[396px]" : ""}`}>
             <div className="max-w-4xl mx-auto">
               {messages.map((message) => (
                 <ChatMessage
@@ -157,7 +206,7 @@ const ChatContainer = () => {
           </div>
 
           {/* Chat Input - Fixed at bottom */}
-          <div className={`fixed bottom-0 right-0 bg-[#0F0F12] px-6 py-4 z-10 transition-all duration-300 ease-in-out ${
+          <div className={`fixed bottom-0 ${contextOpen ? "md:right-[360px]" : "right-0"} bg-[#0F0F12] px-6 py-4 z-10 transition-all duration-300 ease-in-out ${
             isSidebarExpanded ? "left-60" : "left-16"
           }`}>
             <div className="max-w-2xl mx-auto">

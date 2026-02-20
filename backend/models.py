@@ -364,7 +364,6 @@ class VideoSubInterval(Base):
     occlusions_limits = Column(Text, nullable=True)
 
     raw_combined_text = Column(Text, nullable=True)
-    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -372,6 +371,26 @@ class VideoSubInterval(Base):
 
     interval = relationship("VideoInterval")
     video = relationship("Video")
+    embedding_record = relationship(
+        "SubVideoIntervalEmbedding",
+        back_populates="sub_interval",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class SubVideoIntervalEmbedding(Base):
+    __tablename__ = "sub_video_interval_embeddings"
+
+    sub_interval_id = Column(
+        Integer,
+        ForeignKey("video_sub_intervals.id"),
+        primary_key=True,
+    )
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    sub_interval = relationship("VideoSubInterval", back_populates="embedding_record")
 
 
 class IntervalEmbedding(Base):
@@ -386,5 +405,4 @@ class IntervalEmbedding(Base):
 
     video = relationship("Video")
     interval = relationship("VideoInterval")
-
 

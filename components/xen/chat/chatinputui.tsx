@@ -22,15 +22,23 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
     const cursor = inputRef.current?.selectionStart || 0;
     const textBeforeCursor = value.slice(0, cursor);
     const lastAtIndex = textBeforeCursor.lastIndexOf('@');
-    if (lastAtIndex !== -1 && (cursor > lastAtIndex || value[cursor] !== ' ')) {
-      const mentionStart = lastAtIndex + 1;
-      const mentionEnd = cursor;
-      const mention = value.slice(mentionStart, mentionEnd);
-      setMentionText(mention);
-      setFilteredProjects(projects.filter(p => p.toLowerCase().includes(mention.toLowerCase())));
-      setShowSuggestions(true);
-      setSelectedIndex(0);
+
+    // Check if we're still in an active mention (cursor is after @ and no space after)
+    if (lastAtIndex !== -1) {
+      const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
+      // Only show suggestions if there's no space after @ (active mention)
+      if (!textAfterAt.includes(' ')) {
+        const mention = textAfterAt;
+        setMentionText(mention);
+        setFilteredProjects(projects.filter(p => p.toLowerCase().includes(mention.toLowerCase())));
+        setShowSuggestions(true);
+        setSelectedIndex(0);
+      } else {
+        // If there's a space after @, hide suggestions (mention is complete)
+        setShowSuggestions(false);
+      }
     } else {
+      // No @ found before cursor, hide suggestions
       setShowSuggestions(false);
     }
     setMessage(value);
@@ -72,9 +80,18 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
     if (lastAtIndex !== -1) {
       const mentionStart = lastAtIndex + 1;
       const mentionEnd = cursor;
-      const newMessage = message.slice(0, mentionStart) + project + message.slice(mentionEnd);
+      const newMessage = message.slice(0, mentionStart) + project + ' ' + message.slice(mentionEnd);
       setMessage(newMessage);
       setShowSuggestions(false);
+
+      // Position cursor after the project name and space
+      setTimeout(() => {
+        if (inputRef.current) {
+          const newCursorPosition = mentionStart + project.length + 1;
+          inputRef.current.setSelectionRange(newCursorPosition, newCursorPosition);
+          inputRef.current.focus();
+        }
+      }, 0);
     }
   };
 
