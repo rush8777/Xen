@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # Similarity thresholds
 DEFAULT_SIMILARITY_THRESHOLD = 0.3
 CONTENT_SPECIFIC_THRESHOLD = 0.25
-MAX_FIELD_CHARS = 240
-MAX_CHUNK_CHARS = 800
+MAX_FIELD_CHARS = 20000
+MAX_CHUNK_CHARS = 80000
 
 # Content type mappings
 CONTENT_KEYWORDS: dict[str, list[str]] = {
@@ -50,7 +50,7 @@ CONTENT_KEYWORDS: dict[str, list[str]] = {
 class RetrievedInterval:
     """A single retrieved interval with its similarity score and metadata."""
 
-    source: str  # "sub_interval"
+    source: str  # "sub_interval" | "premium_structural" | "premium_psychological" | "premium_performance"
     interval_id: int
     video_id: int
     start_time_seconds: int
@@ -71,6 +71,7 @@ class RetrievedInterval:
 
     # Interval-level field (unused when only sub-intervals are stored)
     combined_interval_text: Optional[str] = None
+    premium_combined_text: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -183,13 +184,23 @@ class VectorRetrievalService:
         content_filter: Optional[str] = None,
     ) -> list[RetrievedInterval]:
         """
-        Search VideoSubInterval table for the given project's video. Returns
+        Search vector-backed interval tables for the given project's video. Returns
         up to `limit` results ranked by similarity.
 
         When `query_embedding` is None (embedding generation failed), falls
         back to returning the first N intervals as context.
         """
-        from ..models import Project, SubVideoIntervalEmbedding, VideoSubInterval
+        from ..models import (
+            PremiumPerformanceInterval,
+            PremiumPerformanceIntervalEmbedding,
+            PremiumPsychologicalInterval,
+            PremiumPsychologicalIntervalEmbedding,
+            PremiumStructuralInterval,
+            PremiumStructuralIntervalEmbedding,
+            Project,
+            SubVideoIntervalEmbedding,
+            VideoSubInterval,
+        )
 
         # Resolve the video_id for this project
         project = db.query(Project).filter(Project.id == project_id).first()
@@ -276,6 +287,69 @@ class VectorRetrievalService:
         _collect_subintervals(content_filter)
         if not results and content_filter:
             _collect_subintervals(None)
+
+        # ------------------------------------------------------------------
+        # Search premium interval embedding tables
+        # ------------------------------------------------------------------
+        premium_sources = [
+            (
+                "premium_structural",
+                PremiumStructuralInterval,
+                PremiumStructuralIntervalEmbedding,
+                PremiumStructuralIntervalEmbedding.structural_interval_id,
+            ),
+            (
+                "premium_psychological",
+                PremiumPsychologicalInterval,
+                PremiumPsychologicalIntervalEmbedding,
+                PremiumPsychologicalIntervalEmbedding.psychological_interval_id,
+            ),
+            (
+                "premium_performance",
+                PremiumPerformanceInterval,
+                PremiumPerformanceIntervalEmbedding,
+                PremiumPerformanceIntervalEmbedding.performance_interval_id,
+            ),
+        ]
+
+        for source_name, interval_model, emb_model, emb_fk in premium_sources:
+            rows = (
+                db.query(interval_model, emb_model)
+                .outerjoin(
+                    emb_model,
+                    emb_fk == interval_model.id,
+                )
+                .filter(interval_model.project_id == project_id)
+                .all()
+            )
+            for interval_row, emb_row in rows:
+                embedding = _parse_embedding(emb_row.embedding if emb_row else None)
+                if query_embedding and embedding:
+                    similarity = _cosine_similarity(query_embedding, embedding)
+                    if similarity < effective_threshold:
+                        continue
+                elif query_embedding is None:
+                    similarity = 0.5
+                else:
+                    similarity = 0.0
+
+                premium_text = (emb_row.combined_text if emb_row else None) or ""
+                if content_filter:
+                    filter_terms = CONTENT_KEYWORDS.get(content_filter, [])
+                    if filter_terms and not any(t in premium_text.lower() for t in filter_terms):
+                        continue
+
+                results.append(
+                    RetrievedInterval(
+                        source=source_name,
+                        interval_id=interval_row.interval_id,
+                        video_id=interval_row.video_id,
+                        start_time_seconds=interval_row.start_time_seconds,
+                        end_time_seconds=interval_row.end_time_seconds,
+                        similarity=similarity,
+                        premium_combined_text=emb_row.combined_text if emb_row else None,
+                    )
+                )
 
         # ------------------------------------------------------------------
         # Sort, de-duplicate by time window, apply limit
@@ -387,11 +461,21 @@ class VectorRetrievalService:
                         truncated = _truncate(val, MAX_FIELD_CHARS)
                         if truncated:
                             lines.append(f"  {label}: {truncated}")
-            else:
+            elif r.combined_interval_text:
                 if r.combined_interval_text:
                     lines.append(
                         f"  {_truncate(r.combined_interval_text, MAX_CHUNK_CHARS)}"
                     )
+            elif r.premium_combined_text:
+                source_label = {
+                    "premium_structural": "Premium structural",
+                    "premium_psychological": "Premium psychological",
+                    "premium_performance": "Premium performance",
+                }.get(r.source, "Premium")
+                lines.append(f"  Source: {source_label}")
+                lines.append(
+                    f"  Summary: {_truncate(r.premium_combined_text, MAX_CHUNK_CHARS)}"
+                )
 
             chunk = "\n".join(lines)
             if len(chunk) > MAX_CHUNK_CHARS:

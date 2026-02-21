@@ -1,11 +1,17 @@
 "use client"
 
 import { Copy, ThumbsUp, ThumbsDown, RotateCcw, Share2, Settings, Sparkles, Database, PanelRight } from "lucide-react";
+import type { ComponentProps } from "react";
+import { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import Typewriter from "typewriter-effect";
 import { useSidebarContext } from "../main/layout";
 
 interface ChatMessageProps {
   content: string;
   isUser: boolean;
+  isStreaming?: boolean;
   showActions?: boolean;
   ragActive?: boolean;
   contextChunksUsed?: number;
@@ -17,6 +23,70 @@ interface TopBarProps {
   onToggleContext?: () => void;
   contextOpen?: boolean;
 }
+
+const markdownComponents = {
+  h1: (props: ComponentProps<"h1">) => (
+    <h1 {...props} className={`mt-4 first:mt-0 text-lg font-semibold text-white ${props.className ?? ""}`} />
+  ),
+  h2: (props: ComponentProps<"h2">) => (
+    <h2 {...props} className={`mt-4 first:mt-0 text-base font-semibold text-zinc-100 ${props.className ?? ""}`} />
+  ),
+  h3: (props: ComponentProps<"h3">) => (
+    <h3 {...props} className={`mt-3 first:mt-0 text-sm font-semibold text-zinc-100 ${props.className ?? ""}`} />
+  ),
+  p: (props: ComponentProps<"p">) => (
+    <p {...props} className={`leading-6 mt-3 first:mt-0 text-zinc-300 ${props.className ?? ""}`} />
+  ),
+  ul: (props: ComponentProps<"ul">) => (
+    <ul {...props} className={`my-3 ml-5 list-disc text-zinc-300 [&>li]:mt-1 ${props.className ?? ""}`} />
+  ),
+  ol: (props: ComponentProps<"ol">) => (
+    <ol {...props} className={`my-3 ml-5 list-decimal text-zinc-300 [&>li]:mt-1 ${props.className ?? ""}`} />
+  ),
+  li: (props: ComponentProps<"li">) => (
+    <li {...props} className={`leading-6 ${props.className ?? ""}`} />
+  ),
+  a: (props: ComponentProps<"a">) => (
+    <a
+      {...props}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`underline underline-offset-4 text-sky-400 hover:text-sky-300 transition-colors ${props.className ?? ""}`}
+    />
+  ),
+  blockquote: (props: ComponentProps<"blockquote">) => (
+    <blockquote
+      {...props}
+      className={`my-3 border-l-2 border-zinc-700 pl-3 italic text-zinc-400 ${props.className ?? ""}`}
+    />
+  ),
+  code: (props: ComponentProps<"code">) => (
+    <code
+      {...props}
+      className={`rounded-md bg-zinc-800 px-1.5 py-0.5 font-mono text-[11px] text-zinc-100 ${props.className ?? ""}`}
+    />
+  ),
+  pre: (props: ComponentProps<"pre">) => (
+    <pre
+      {...props}
+      className={`my-3 overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-[11px] ${props.className ?? ""}`}
+    />
+  ),
+  table: (props: ComponentProps<"table">) => (
+    <div className="my-3 w-full overflow-x-auto">
+      <table {...props} className={`w-full text-xs text-zinc-300 ${props.className ?? ""}`} />
+    </div>
+  ),
+  th: (props: ComponentProps<"th">) => (
+    <th {...props} className={`border-b border-zinc-700 px-2 py-1.5 text-left font-medium text-zinc-100 ${props.className ?? ""}`} />
+  ),
+  td: (props: ComponentProps<"td">) => (
+    <td {...props} className={`border-b border-zinc-800 px-2 py-1.5 align-top ${props.className ?? ""}`} />
+  ),
+  hr: (props: ComponentProps<"hr">) => (
+    <hr {...props} className={`my-4 border-zinc-800 ${props.className ?? ""}`} />
+  ),
+};
 
 // ── Top Bar ────────────────────────────────────────────────────────────────────
 const TopBar = ({ onNewChat, ragActive, onToggleContext, contextOpen }: TopBarProps) => {
@@ -80,7 +150,35 @@ const TopBar = ({ onNewChat, ragActive, onToggleContext, contextOpen }: TopBarPr
 };
 
 // ── Chat Message ───────────────────────────────────────────────────────────────
-const ChatMessage = ({ content, isUser, showActions = false, ragActive, contextChunksUsed }: ChatMessageProps) => {
+const ChatMessage = ({ content, isUser, isStreaming = false, showActions = false, ragActive, contextChunksUsed }: ChatMessageProps) => {
+  const [animatedContent, setAnimatedContent] = useState(content);
+
+  useEffect(() => {
+    if (isUser) {
+      setAnimatedContent(content);
+      return;
+    }
+
+    if (!content) {
+      setAnimatedContent("");
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setAnimatedContent((prev) => {
+        if (prev === content) return prev;
+        if (!content.startsWith(prev)) return content;
+        const step = isStreaming ? 2 : 3;
+        const nextLength = Math.min(content.length, prev.length + step);
+        return content.slice(0, nextLength);
+      });
+    }, 12);
+
+    return () => window.clearInterval(timer);
+  }, [content, isStreaming, isUser]);
+
+  const showTypingCursor = isStreaming || animatedContent.length < content.length;
+
   if (isUser) {
     return (
       <div className="flex justify-end mb-4">
@@ -94,9 +192,39 @@ const ChatMessage = ({ content, isUser, showActions = false, ragActive, contextC
   return (
     <div className="mb-4">
       <div className="text-zinc-300 text-xs leading-[1.6] max-w-xl">
-        {content}
+        {isStreaming && !animatedContent.trim() ? (
+          <div className="py-1">
+            <div className="text-zinc-400 text-xs">
+              <Typewriter
+                options={{
+                  strings: [
+                    "Thinking through your request...",
+                    "Analyzing context...",
+                    "Generating response...",
+                  ],
+                  autoStart: true,
+                  loop: true,
+                  delay: 18,
+                  deleteSpeed: 14,
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {animatedContent}
+            </ReactMarkdown>
+            {showTypingCursor && (
+              <span
+                aria-hidden
+                className="inline-block ml-1 h-3 w-1.5 rounded-sm bg-zinc-400 align-middle animate-pulse"
+              />
+            )}
+          </>
+        )}
       </div>
-      {showActions && (
+      {showActions && !isStreaming && (
         <div className="flex items-center gap-0.5 mt-2">
           <button className="p-1.5 rounded-md hover:bg-zinc-800/50 transition-colors">
             <Copy className="w-3.5 h-3.5 text-zinc-400" />

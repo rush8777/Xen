@@ -9,9 +9,12 @@ import NewChatScreen from "./new-chat-screen"
 
 interface Message {
   id: string
+  type: "message" | "divider"
   content: string
-  isUser: boolean
+  isUser?: boolean
+  isStreaming?: boolean
   timestamp: Date
+  projectName?: string
   ragActive?: boolean
   contextChunksUsed?: number
 }
@@ -27,6 +30,7 @@ const ChatContainer = () => {
   const [ragActive, setRagActive] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
   const [contextChunks, setContextChunks] = useState<string[]>([])
+  const [activeProjectName, setActiveProjectName] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -37,19 +41,53 @@ const ChatContainer = () => {
     scrollToBottom()
   }, [messages])
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, mentionedProject?: string) => {
+    const normalizedMention = mentionedProject?.trim()
+    const isProjectSwitch =
+      !!normalizedMention &&
+      (!activeProjectName || activeProjectName.toLowerCase() !== normalizedMention.toLowerCase())
+
+    const dividerMessage: Message | null = isProjectSwitch
+      ? {
+          id: `divider-${Date.now().toString()}`,
+          type: "divider",
+          content: "",
+          projectName: normalizedMention,
+          timestamp: new Date(),
+        }
+      : null
+
     const userMessage: Message = {
       id: Date.now().toString(),
+      type: "message",
       content,
       isUser: true,
       timestamp: new Date()
     }
+    const assistantMessageId = `assistant-${Date.now().toString()}`
+    const assistantPlaceholder: Message = {
+      id: assistantMessageId,
+      type: "message",
+      content: "",
+      isUser: false,
+      isStreaming: true,
+      timestamp: new Date(),
+      ragActive: false,
+      contextChunksUsed: 0,
+    }
 
-    setMessages(prev => [...prev, userMessage])
+    setMessages(prev =>
+      dividerMessage
+        ? [...prev, dividerMessage, userMessage, assistantPlaceholder]
+        : [...prev, userMessage, assistantPlaceholder]
+    )
+    if (isProjectSwitch && normalizedMention) {
+      setActiveProjectName(normalizedMention)
+    }
     setIsLoading(true)
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/chats/send-message`, {
+      const res = await fetch(`${API_BASE_URL}/api/chats/send-message-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -59,41 +97,193 @@ const ChatContainer = () => {
         })
       })
 
+      const handleLegacyNonStreaming = async () => {
+        const legacyRes = await fetch(`${API_BASE_URL}/api/chats/send-message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            message: content,
+            user_id: null,
+          }),
+        })
+
+        if (!legacyRes.ok) {
+          const legacyErr = await legacyRes.json().catch(() => ({}))
+          throw new Error(legacyErr?.detail || `Request failed (${legacyRes.status})`)
+        }
+
+        const data: {
+          chat_id: number
+          messages: Array<{ role: string; content: string }>
+          rag_active?: boolean
+          context_chunks_used?: number
+          context_chunks?: string[]
+        } = await legacyRes.json()
+
+        setChatId(data.chat_id)
+        const finalRagActive = !!data.rag_active
+        const finalContextChunksUsed =
+          typeof data.context_chunks_used === "number" ? data.context_chunks_used : 0
+        const finalContextChunks = Array.isArray(data.context_chunks) ? data.context_chunks : []
+        setRagActive(finalRagActive)
+        setContextChunks(finalContextChunks)
+
+        const assistant = [...(data.messages || [])].reverse().find(m => m.role === "assistant")
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMessageId
+              ? {
+                  ...m,
+                  content: assistant?.content || "No response received.",
+                  isStreaming: false,
+                  ragActive: finalRagActive,
+                  contextChunksUsed: finalContextChunksUsed,
+                }
+              : m
+          )
+        )
+      }
+
       if (!res.ok) {
+        if (res.status === 404 || res.status === 405) {
+          await handleLegacyNonStreaming()
+          return
+        }
         const err = await res.json().catch(() => ({}))
         throw new Error(err?.detail || `Request failed (${res.status})`)
       }
-
-      const data: {
-        chat_id: number
-        messages: Array<{ role: string; content: string }>
-        rag_active?: boolean
-        context_chunks_used?: number
-        context_chunks?: string[]
-      } = await res.json()
-
-      setChatId(data.chat_id)
-      setRagActive(!!data.rag_active)
-      setContextChunks(Array.isArray(data.context_chunks) ? data.context_chunks : [])
-
-      const assistant = [...(data.messages || [])].reverse().find(m => m.role === "assistant")
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: assistant?.content || "No response received.",
-        isUser: false,
-        timestamp: new Date(),
-        ragActive: !!data.rag_active,
-        contextChunksUsed: data.context_chunks_used ?? 0,
+      if (!res.body) {
+        throw new Error("Streaming response body is not available")
       }
-      setMessages(prev => [...prev, aiMessage])
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      let streamErrored = false
+
+      const processSseEvent = (rawEvent: string) => {
+        const lines = rawEvent.split(/\r?\n/)
+        let eventType = "message"
+        const dataLines: string[] = []
+
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim()
+          } else if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trimStart())
+          }
+        }
+
+        if (dataLines.length === 0) return
+
+        let payload: any = null
+        try {
+          payload = JSON.parse(dataLines.join("\n"))
+        } catch {
+          return
+        }
+
+        if (eventType === "meta") {
+          if (typeof payload.chat_id === "number") {
+            setChatId(payload.chat_id)
+          }
+          setRagActive(!!payload.rag_active)
+          setContextChunks(Array.isArray(payload.context_chunks) ? payload.context_chunks : [])
+          return
+        }
+
+        if (eventType === "token") {
+          const delta = typeof payload.delta === "string" ? payload.delta : ""
+          if (!delta) return
+          setIsLoading(false)
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === assistantMessageId
+                ? { ...m, content: (m.content || "") + delta }
+                : m
+            )
+          )
+          return
+        }
+
+        if (eventType === "done") {
+          if (typeof payload.chat_id === "number") {
+            setChatId(payload.chat_id)
+          }
+          const finalRagActive = !!payload.rag_active
+          const finalContextChunksUsed =
+            typeof payload.context_chunks_used === "number" ? payload.context_chunks_used : 0
+          const finalContextChunks = Array.isArray(payload.context_chunks) ? payload.context_chunks : []
+
+          setRagActive(finalRagActive)
+          setContextChunks(finalContextChunks)
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === assistantMessageId
+                ? {
+                    ...m,
+                    content:
+                      typeof payload.content === "string" && payload.content.length > 0
+                        ? payload.content
+                        : m.content || "No response received.",
+                    isStreaming: false,
+                    ragActive: finalRagActive,
+                    contextChunksUsed: finalContextChunksUsed,
+                  }
+                : m
+            )
+          )
+          return
+        }
+
+        if (eventType === "error") {
+          streamErrored = true
+          const errMsg =
+            typeof payload.error === "string" && payload.error.length > 0
+              ? payload.error
+              : "Streaming generation failed"
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === assistantMessageId
+                ? { ...m, content: `Error: ${errMsg}`, isStreaming: false }
+                : m
+            )
+          )
+        }
+      }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n")
+
+        let boundaryIndex = buffer.indexOf("\n\n")
+        while (boundaryIndex !== -1) {
+          const rawEvent = buffer.slice(0, boundaryIndex)
+          buffer = buffer.slice(boundaryIndex + 2)
+          processSseEvent(rawEvent)
+          boundaryIndex = buffer.indexOf("\n\n")
+        }
+      }
+
+      if (!streamErrored) {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMessageId && !(m.content || "").trim()
+              ? { ...m, content: "No response received.", isStreaming: false }
+              : m
+          )
+        )
+      }
     } catch (e: any) {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: `Error: ${e?.message || "Failed to send message"}`,
-        isUser: false,
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, aiMessage])
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === assistantMessageId
+            ? { ...m, content: `Error: ${e?.message || "Failed to send message"}`, isStreaming: false }
+            : m
+        )
+      )
     } finally {
       setIsLoading(false)
     }
@@ -104,6 +294,7 @@ const ChatContainer = () => {
     // Add welcome message
     const welcomeMessage: Message = {
       id: Date.now().toString(),
+      type: "message",
       content: "Hello! I'm your AI assistant. How can I help you today?",
       isUser: false,
       timestamp: new Date()
@@ -121,6 +312,7 @@ const ChatContainer = () => {
     setRagActive(false)
     setContextOpen(false)
     setContextChunks([])
+    setActiveProjectName(null)
   }
 
   return (
@@ -180,26 +372,26 @@ const ChatContainer = () => {
           {/* Chat Messages */}
           <div className={`flex-1 overflow-y-auto px-6 py-4 pt-12 pb-32 ${contextOpen ? "md:pr-[396px]" : ""}`}>
             <div className="max-w-4xl mx-auto">
-              {messages.map((message) => (
-                <ChatMessage
-                  key={message.id}
-                  content={message.content}
-                  isUser={message.isUser}
-                  showActions={!message.isUser}
-                  ragActive={message.ragActive}
-                  contextChunksUsed={message.contextChunksUsed}
-                />
-              ))}
-              {isLoading && (
-                <div className="mb-4">
-                  <div className="text-zinc-300 text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                      <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              {messages.map((message) =>
+                message.type === "divider" ? (
+                  <div key={message.id} className="my-4 flex items-center gap-3">
+                    <div className="h-px flex-1 bg-zinc-800/80" />
+                    <div className="rounded-full border border-zinc-700/70 bg-zinc-900/70 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-300">
+                      Project: {message.projectName}
                     </div>
+                    <div className="h-px flex-1 bg-zinc-800/80" />
                   </div>
-                </div>
+                ) : (
+                  <ChatMessage
+                    key={message.id}
+                    content={message.content}
+                    isUser={!!message.isUser}
+                    isStreaming={!!message.isStreaming}
+                    showActions={!message.isUser}
+                    ragActive={message.ragActive}
+                    contextChunksUsed={message.contextChunksUsed}
+                  />
+                )
               )}
               <div ref={messagesEndRef} />
             </div>

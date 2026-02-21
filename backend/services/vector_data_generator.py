@@ -601,6 +601,28 @@ async def generate_vector_data_for_project(
                 project_id,
             )
 
+            # Auto-trigger premium analysis (if not started) after vector completion.
+            current_premium_status = project.premium_analysis_status or "not_started"
+            if current_premium_status == "not_started":
+                try:
+                    from .premium_analysis_service import (
+                        generate_premium_analysis_for_project,
+                    )
+
+                    asyncio.create_task(
+                        generate_premium_analysis_for_project(project_id)
+                    )
+                    logger.info(
+                        "[VectorGen] Auto-triggered premium analysis for project %s.",
+                        project_id,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[VectorGen] Failed to auto-trigger premium analysis for project %s: %s",
+                        project_id,
+                        exc,
+                    )
+
     except Exception as exc:
         logger.error(
             "[VectorGen] Vector data generation failed for project %s: %s",

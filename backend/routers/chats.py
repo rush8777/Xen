@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -342,6 +344,124 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
     )
 
 
+@router.post("/chats/send-message-stream")
+def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(get_db)) -> StreamingResponse:
+    message = (payload.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    rag = RagChatService()
+
+    # Load or create chat + resolve project
+    chat: Chat | None = None
+    project: Project | None = None
+
+    if payload.chat_id is not None:
+        chat = db.query(Chat).filter(Chat.id == payload.chat_id).first()
+        if not chat:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        project = db.query(Project).filter(Project.id == chat.project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found for chat")
+    else:
+        project_name = _extract_project_name_from_message(message)
+        if not project_name:
+            raise HTTPException(
+                status_code=400,
+                detail='No project specified. Start your message with a project mention like "@My Project".',
+            )
+        project = _resolve_project_by_name(db=db, project_name=project_name, user_id=payload.user_id)
+        chat = Chat(
+            project_id=project.id,
+            name=f"{project.name} Chat",
+            platform=None,
+        )
+        db.add(chat)
+        db.commit()
+        db.refresh(chat)
+
+    # Persist user message first
+    user_row = ChatMessage(chat_id=chat.id, role="user", content=message)
+    db.add(user_row)
+    db.commit()
+    db.refresh(user_row)
+
+    # Build conversation history for model
+    history_rows = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.chat_id == chat.id)
+        .order_by(ChatMessage.created_at.asc())
+        .all()
+    )
+    history = [{"role": r.role, "content": r.content} for r in history_rows]
+
+    try:
+        token_iter, rag_active, context_chunks_used, context_chunks = rag.stream_reply(
+            project=project,
+            messages=history,
+            user_message=message,
+            db=db,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Assistant generation failed: {str(e)}")
+
+    def _sse_event(event: str, payload_obj: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(payload_obj, ensure_ascii=False)}\n\n"
+
+    def event_generator():
+        assistant_parts: list[str] = []
+
+        # Initial metadata event
+        yield _sse_event(
+            "meta",
+            {
+                "chat_id": chat.id,
+                "project": {"id": project.id, "name": project.name},
+                "rag_active": rag_active,
+                "context_chunks_used": context_chunks_used,
+                "context_chunks": context_chunks or [],
+            },
+        )
+
+        try:
+            for delta in token_iter:
+                assistant_parts.append(delta)
+                yield _sse_event("token", {"delta": delta})
+        except Exception as e:
+            db.rollback()
+            yield _sse_event("error", {"error": f"Streaming generation failed: {str(e)}"})
+            return
+
+        assistant_text = "".join(assistant_parts).strip()
+        if not assistant_text:
+            assistant_text = "No response received."
+
+        assistant_row = ChatMessage(chat_id=chat.id, role="assistant", content=assistant_text)
+        db.add(assistant_row)
+        db.commit()
+
+        yield _sse_event(
+            "done",
+            {
+                "chat_id": chat.id,
+                "project": {"id": project.id, "name": project.name},
+                "content": assistant_text,
+                "rag_active": rag_active,
+                "context_chunks_used": context_chunks_used,
+                "context_chunks": context_chunks or [],
+            },
+        )
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @router.patch("/chats/{chat_id}", response_model=ChatResponse)
 def update_chat(
     chat_id: int,
@@ -382,4 +502,3 @@ def delete_chat(chat_id: int, db: Session = Depends(get_db)) -> dict:
     db.commit()
 
     return {"status": "ok"}
-

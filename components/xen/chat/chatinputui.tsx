@@ -5,7 +5,7 @@ import { Paperclip, Globe, Lightbulb, MoreHorizontal, ArrowUp } from "lucide-rea
 import { useProjects } from './useProjects';
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, mentionedProject?: string) => void;
 }
 
 const ChatInput = ({ onSend }: ChatInputProps) => {
@@ -68,7 +68,26 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim()) {
-      onSend(message);
+      const loweredMessage = message.toLowerCase();
+      let mentionedProject: string | undefined;
+      let bestIndex = -1;
+
+      for (const project of projects) {
+        const atMention = `@${project.toLowerCase()}`;
+        const idx = loweredMessage.lastIndexOf(atMention);
+        if (idx > bestIndex) {
+          bestIndex = idx;
+          mentionedProject = project;
+        }
+      }
+
+      if (!mentionedProject) {
+        const fallbackMentions = [...message.matchAll(/@([^\s@]+)/g)];
+        const lastMention = fallbackMentions[fallbackMentions.length - 1];
+        mentionedProject = lastMention?.[1];
+      }
+
+      onSend(message, mentionedProject);
       setMessage("");
     }
   };
