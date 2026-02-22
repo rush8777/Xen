@@ -175,6 +175,14 @@ class Project(Base):
     vector_generation_completed_at = Column(DateTime, nullable=True)
     vector_generation_error = Column(Text, nullable=True)
 
+    # Premium analysis status tracking
+    premium_analysis_status = Column(
+        String(20), nullable=False, default="not_started"
+    )  # not_started, pending, completed, failed
+    premium_analysis_started_at = Column(DateTime, nullable=True)
+    premium_analysis_completed_at = Column(DateTime, nullable=True)
+    premium_analysis_error = Column(Text, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime,
@@ -327,6 +335,287 @@ class ProjectOverview(Base):
     project = relationship("Project")
 
 
+class ProjectPremiumAnalysis(Base):
+    __tablename__ = "project_premium_analyses"
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_project_premium_analysis_project"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
+
+    pass_1_output = Column(Text, nullable=True)
+    pass_2_output = Column(Text, nullable=True)
+    pass_3_output = Column(Text, nullable=True)
+
+    status = Column(String(20), nullable=False, default="pending")  # not_started, pending, completed, failed
+    version = Column(Integer, nullable=False, default=1)
+    error = Column(Text, nullable=True)
+
+    generated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+
+
+class PremiumIntervalAnalysis(Base):
+    __tablename__ = "premium_interval_analyses"
+    __table_args__ = (
+        UniqueConstraint("project_id", "interval_id", name="uq_premium_interval_project_interval"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id"),
+        nullable=False,
+        index=True,
+    )
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_id = Column(Integer, ForeignKey("video_intervals.id"), nullable=False, index=True)
+    interval_index = Column(Integer, nullable=False)
+    start_time_seconds = Column(Integer, nullable=False)
+    end_time_seconds = Column(Integer, nullable=False)
+
+    pass_1_json = Column(Text, nullable=True)
+    pass_2_json = Column(Text, nullable=True)
+    pass_3_json = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+    video = relationship("Video")
+    interval = relationship("VideoInterval")
+
+
+class PremiumStructuralInterval(Base):
+    __tablename__ = "premium_structural_intervals"
+    __table_args__ = (
+        UniqueConstraint("project_id", "interval_id", name="uq_premium_structural_project_interval"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_id = Column(Integer, ForeignKey("video_intervals.id"), nullable=False, index=True)
+    interval_index = Column(Integer, nullable=False)
+    start_time_seconds = Column(Integer, nullable=False)
+    end_time_seconds = Column(Integer, nullable=False)
+
+    hook_strength_score = Column(Integer, nullable=True)
+    hook_strength_justification = Column(Text, nullable=True)
+
+    stimulation_cuts_per_20s = Column(Integer, nullable=True)
+    stimulation_camera_variation = Column(String(20), nullable=True)
+    stimulation_motion_intensity = Column(String(20), nullable=True)
+    stimulation_justification = Column(Text, nullable=True)
+
+    escalation_intensity_increase = Column(Integer, nullable=True)  # 1/0
+    escalation_stakes_raised = Column(Integer, nullable=True)  # 1/0
+    escalation_justification = Column(Text, nullable=True)
+
+    cognitive_information_rate = Column(String(20), nullable=True)
+    cognitive_over_explanation_risk = Column(Integer, nullable=True)  # 1/0
+    cognitive_justification = Column(Text, nullable=True)
+
+    drop_risk_score_percent = Column(Integer, nullable=True)
+    drop_risk_justification = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+    video = relationship("Video")
+    interval = relationship("VideoInterval")
+    embedding_record = relationship(
+        "PremiumStructuralIntervalEmbedding",
+        back_populates="structural_interval",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class PremiumPsychologicalInterval(Base):
+    __tablename__ = "premium_psychological_intervals"
+    __table_args__ = (
+        UniqueConstraint("project_id", "interval_id", name="uq_premium_psych_project_interval"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_id = Column(Integer, ForeignKey("video_intervals.id"), nullable=False, index=True)
+    interval_index = Column(Integer, nullable=False)
+    start_time_seconds = Column(Integer, nullable=False)
+    end_time_seconds = Column(Integer, nullable=False)
+
+    primary_trigger_type = Column(String(50), nullable=True)
+    primary_trigger_justification = Column(Text, nullable=True)
+
+    trigger_intensity_score = Column(Integer, nullable=True)
+    trigger_intensity_justification = Column(Text, nullable=True)
+
+    emotional_arc_pattern_type = Column(String(50), nullable=True)
+    emotional_arc_justification = Column(Text, nullable=True)
+
+    attention_sustainability_type = Column(String(50), nullable=True)
+    attention_sustainability_justification = Column(Text, nullable=True)
+
+    viewer_momentum_score = Column(Integer, nullable=True)
+    viewer_momentum_justification = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+    video = relationship("Video")
+    interval = relationship("VideoInterval")
+    embedding_record = relationship(
+        "PremiumPsychologicalIntervalEmbedding",
+        back_populates="psychological_interval",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class PremiumPerformanceInterval(Base):
+    __tablename__ = "premium_performance_intervals"
+    __table_args__ = (
+        UniqueConstraint("project_id", "interval_id", name="uq_premium_perf_project_interval"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_id = Column(Integer, ForeignKey("video_intervals.id"), nullable=False, index=True)
+    interval_index = Column(Integer, nullable=False)
+    start_time_seconds = Column(Integer, nullable=False)
+    end_time_seconds = Column(Integer, nullable=False)
+
+    retention_strength_score = Column(Integer, nullable=True)
+    retention_strength_justification = Column(Text, nullable=True)
+
+    competitive_density_score = Column(Integer, nullable=True)
+    competitive_density_justification = Column(Text, nullable=True)
+
+    platform_tiktok_score = Column(Integer, nullable=True)
+    platform_tiktok_justification = Column(Text, nullable=True)
+    platform_instagram_reels_score = Column(Integer, nullable=True)
+    platform_instagram_reels_justification = Column(Text, nullable=True)
+    platform_youtube_shorts_score = Column(Integer, nullable=True)
+    platform_youtube_shorts_justification = Column(Text, nullable=True)
+
+    conversion_leverage_score = Column(Integer, nullable=True)
+    conversion_leverage_justification = Column(Text, nullable=True)
+
+    total_performance_index_score = Column(Integer, nullable=True)
+    total_performance_index_justification = Column(Text, nullable=True)
+
+    structural_weakness_priority_json = Column(Text, nullable=True)
+    highest_leverage_target = Column(Text, nullable=True)
+    highest_leverage_justification = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+    video = relationship("Video")
+    interval = relationship("VideoInterval")
+    embedding_record = relationship(
+        "PremiumPerformanceIntervalEmbedding",
+        back_populates="performance_interval",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class PremiumStructuralIntervalEmbedding(Base):
+    __tablename__ = "premium_structural_interval_embeddings"
+
+    structural_interval_id = Column(
+        Integer,
+        ForeignKey("premium_structural_intervals.id"),
+        primary_key=True,
+    )
+    combined_text = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    structural_interval = relationship(
+        "PremiumStructuralInterval",
+        back_populates="embedding_record",
+    )
+
+
+class PremiumPsychologicalIntervalEmbedding(Base):
+    __tablename__ = "premium_psychological_interval_embeddings"
+
+    psychological_interval_id = Column(
+        Integer,
+        ForeignKey("premium_psychological_intervals.id"),
+        primary_key=True,
+    )
+    combined_text = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    psychological_interval = relationship(
+        "PremiumPsychologicalInterval",
+        back_populates="embedding_record",
+    )
+
+
+class PremiumPerformanceIntervalEmbedding(Base):
+    __tablename__ = "premium_performance_interval_embeddings"
+
+    performance_interval_id = Column(
+        Integer,
+        ForeignKey("premium_performance_intervals.id"),
+        primary_key=True,
+    )
+    combined_text = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    performance_interval = relationship(
+        "PremiumPerformanceInterval",
+        back_populates="embedding_record",
+    )
+
+
 class VideoInterval(Base):
     __tablename__ = "video_intervals"
 
@@ -405,4 +694,3 @@ class IntervalEmbedding(Base):
 
     video = relationship("Video")
     interval = relationship("VideoInterval")
-

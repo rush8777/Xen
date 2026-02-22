@@ -486,5 +486,221 @@
     "prompt_version": "v1",
     "saved_at": "2026-02-13T08:43:29.093511",
     "expires_at": null
+  },
+  "ce9c13345fd560a7b7676dce6a43878310b51d3bb9faa1bf6c4c70db58b0ca6d": {
+    "component": "video_metrics_grid",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\video_metrics_grid.v1.2026-02-15T10-16-56Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:16:56.617981",
+    "expires_at": null
+  },
+  "e703ce8a23ce27bbb712af4861a3181e05af49a38c24db2ddb277488b9faa78c": {
+    "component": "sentiment_pulse",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\sentiment_pulse.v1.2026-02-15T10-17-05Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:17:05.291178",
+    "expires_at": null
+  },
+  "e2ad7dc12628408eec89d778001c26817aa46d5f7df87cbf10a0d1e1e6d5baf5": {
+    "component": "emotion_radar",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\emotion_radar.v1.2026-02-15T10-17-10Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:17:10.476449",
+    "expires_at": null
+  },
+  "582e8795fd79cb6d417b8dda31ab4e5a3dadbfe2ee912d6dbb0e512106b2540e": {
+    "component": "emotional_intensity_timeline",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\emotional_intensity_timeline.v1.2026-02-15T10-17-21Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:17:21.106570",
+    "expires_at": null
+  },
+  "b6a978524cee41f8eb0a7ff9950b2c713cd62ef7afdbce2805b41e0cab545510": {
+    "component": "audience_demographics.age_distribution",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\audience_demographics.age_distribution.v1.2026-02-15T10-17-23Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:17:23.228994",
+    "expires_at": null
+  },
+  "66885cba1ad01cae363cf18f45608e69a170fc41cb7536d9296a2f507e249702": {
+    "component": "audience_demographics.gender_distribution",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\audience_demographics.gender_distribution.v1.2026-02-15T10-17-25Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:17:25.474968",
+    "expires_at": null
+  },
+  "8a36e4faf7eb7de41d7cbd258faa0bd5eea85b208bcb399b1bd80a541da4c6b9": {
+    "component": "audience_demographics.top_locations",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\audience_demographics.top_locations.v1.2026-02-15T10-17-28Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:17:28.027250",
+    "expires_at": null
+  },
+  "f306ae7153cdfbfc1d14d372e6e7396411c05a31551b8738488f02ce06f9ea02": {
+    "component": "audience_demographics.audience_interests",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\audience_demographics.audience_interests.v1.2026-02-15T10-17-31Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:17:31.314208",
+    "expires_at": null
+  },
+  "b3a698947f3e8ed9ddf616286bf80da0a66dd1b907ccc742fce5f0ab21017a65": {
+    "component": "top_comments",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\top_comments.v1.2026-02-15T10-17-40Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T10:17:40.056669",
+    "expires_at": null
+  },
+  "26fd1a05b9087d53706ca171aa4873aaf3a804e5043109b9be921ee0ba753bfb": {
+    "component": "video_metrics_grid",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\video_metrics_grid.v1.2026-02-15T18-37-00Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:00.542274",
+    "expires_at": null
+  },
+  "9a3141263da8da907efa45f14c4659bc55b6c16d1161873d6377b9c940224bae": {
+    "component": "sentiment_pulse",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\sentiment_pulse.v1.2026-02-15T18-37-07Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:07.590647",
+    "expires_at": null
+  },
+  "acf15cfba422f4d02a79d124036bdab6f077625b1523afb05e26b47d2c946562": {
+    "component": "emotion_radar",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\emotion_radar.v1.2026-02-15T18-37-13Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:13.131160",
+    "expires_at": null
+  },
+  "20d8e2eeaf0eacd8b722728c891658c20232bb9d5672d263ee0e325abf2d9a63": {
+    "component": "emotional_intensity_timeline",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\emotional_intensity_timeline.v1.2026-02-15T18-37-23Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:23.912508",
+    "expires_at": null
+  },
+  "36b24b8d5e6d2512eee9fce67376b23f532bb050d176fe6337b6bb3c729acb23": {
+    "component": "audience_demographics.age_distribution",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\audience_demographics.age_distribution.v1.2026-02-15T18-37-25Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:25.926640",
+    "expires_at": null
+  },
+  "3cd322d6473f1f822786fc64c2c0ec0bb6b5378a6cb17c621bf58e2a2748150b": {
+    "component": "audience_demographics.gender_distribution",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\audience_demographics.gender_distribution.v1.2026-02-15T18-37-27Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:27.755039",
+    "expires_at": null
+  },
+  "d1f65a78d511a6d1df54f1b8a9574f74a2ea15626c0a308f08f77ca333e3292f": {
+    "component": "audience_demographics.top_locations",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\audience_demographics.top_locations.v1.2026-02-15T18-37-29Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:29.990573",
+    "expires_at": null
+  },
+  "8daad24a1f3b355796e463b4c8c0dff595537bb9cd1947c1f16448ea925e361f": {
+    "component": "audience_demographics.audience_interests",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\audience_demographics.audience_interests.v1.2026-02-15T18-37-32Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:32.572217",
+    "expires_at": null
+  },
+  "d6071d0b0a050e49e5e6409e2778ca19f8e9f2cb6b793217802778ee98b09629": {
+    "component": "top_comments",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\2\\statistics\\top_comments.v1.2026-02-15T18-37-39Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-15T18:37:39.925046",
+    "expires_at": null
+  },
+  "8e64d748419fe5f68deecba5b4deb7c671929887ad49e50d73e5fcb238874c7a": {
+    "component": "video_metrics_grid",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\video_metrics_grid.v1.2026-02-17T07-25-46Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:25:46.243486",
+    "expires_at": null
+  },
+  "3ab3dc90103df7c17efdb7599c18cc1333fae748114a3a30b66f5b36009846d5": {
+    "component": "sentiment_pulse",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\sentiment_pulse.v1.2026-02-17T07-25-57Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:25:57.031281",
+    "expires_at": null
+  },
+  "2ef315049e79116df5cd964004e7b9594acd00a6b092df4b7da6caaac14d9ee1": {
+    "component": "emotion_radar",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\emotion_radar.v1.2026-02-17T07-26-02Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:26:02.648898",
+    "expires_at": null
+  },
+  "59efd2742525904f7ea575a50a0610fb11aefc290fc3c424477c9304a23f01b0": {
+    "component": "emotional_intensity_timeline",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\emotional_intensity_timeline.v1.2026-02-17T07-26-13Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:26:13.379106",
+    "expires_at": null
+  },
+  "9e58d0da94dc536da0c4c9f21027ac5bd9aaa2650db189d8001f7eb6f75aaf0a": {
+    "component": "audience_demographics.age_distribution",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\audience_demographics.age_distribution.v1.2026-02-17T07-26-15Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:26:15.943682",
+    "expires_at": null
+  },
+  "656a610498d8775f82ad7b68fd342caf51f4a9b59aee2f799fd222d7065ed7c2": {
+    "component": "audience_demographics.gender_distribution",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\audience_demographics.gender_distribution.v1.2026-02-17T07-26-17Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:26:17.689340",
+    "expires_at": null
+  },
+  "7bee7ef8c70eba6f44507dd39f3cb84f170d97f1755c5b2681d97127efff92a0": {
+    "component": "audience_demographics.top_locations",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\audience_demographics.top_locations.v1.2026-02-17T07-26-20Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:26:20.227031",
+    "expires_at": null
+  },
+  "404d899c51264a0a03ee3c3cb4024075fdf61510d8c047bf921baede0b65f61f": {
+    "component": "audience_demographics.audience_interests",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\audience_demographics.audience_interests.v1.2026-02-17T07-26-25Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:26:25.099106",
+    "expires_at": null
+  },
+  "ca055b4eb8ca21e832e273994ee5347c80b2e922fe622a4fd1df5794e2717332": {
+    "component": "top_comments",
+    "output_path": "D:\\web_dev\\v0-social\\backend\\gemini_backend\\outputs\\1\\statistics\\top_comments.v1.2026-02-17T07-26-33Z.json",
+    "schema_version": 1,
+    "prompt_version": "v2.0-optimized",
+    "saved_at": "2026-02-17T07:26:33.033665",
+    "expires_at": null
   }
 }
