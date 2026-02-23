@@ -1,0 +1,41 @@
+{
+  "name": "teach-canvas-kit",
+  "version": "1.0.0",
+  "description": "A React component for creating interactive course presentations with slides, quizzes, and checklists",
+  "main": "index.tsx",
+  "types": "index.tsx",
+  "files": [
+    "index.tsx",
+    "TeachCanvasKit.tsx",
+    "lib/",
+    "data/",
+    "assets/",
+    "styles.css"
+  ],
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.462.0",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "typescript": "^5.8.3"
+  },
+  "keywords": [
+    "react",
+    "component",
+    "education",
+    "course",
+    "presentation",
+    "slides",
+    "quiz",
+    "interactive"
+  ],
+  "author": "Teach Canvas Kit",
+  "license": "MIT"
+}

@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import (
     Column,
     DateTime,
+    Float,
     Integer,
     String,
     Text,
@@ -353,6 +354,8 @@ class ProjectPremiumAnalysis(Base):
     pass_1_output = Column(Text, nullable=True)
     pass_2_output = Column(Text, nullable=True)
     pass_3_output = Column(Text, nullable=True)
+    pass_4_output = Column(Text, nullable=True)
+    pass_5_output = Column(Text, nullable=True)
 
     status = Column(String(20), nullable=False, default="pending")  # not_started, pending, completed, failed
     version = Column(Integer, nullable=False, default=1)
@@ -392,6 +395,8 @@ class PremiumIntervalAnalysis(Base):
     pass_1_json = Column(Text, nullable=True)
     pass_2_json = Column(Text, nullable=True)
     pass_3_json = Column(Text, nullable=True)
+    pass_4_json = Column(Text, nullable=True)
+    pass_5_json = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
@@ -562,6 +567,80 @@ class PremiumPerformanceInterval(Base):
     )
 
 
+class PremiumTranscriptInterval(Base):
+    __tablename__ = "premium_transcript_intervals"
+    __table_args__ = (
+        UniqueConstraint("project_id", "interval_id", name="uq_premium_transcript_project_interval"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_id = Column(Integer, ForeignKey("video_intervals.id"), nullable=False, index=True)
+    interval_index = Column(Integer, nullable=False)
+    start_time_seconds = Column(Integer, nullable=False)
+    end_time_seconds = Column(Integer, nullable=False)
+
+    transcript_text = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+    video = relationship("Video")
+    interval = relationship("VideoInterval")
+    embedding_record = relationship(
+        "PremiumTranscriptIntervalEmbedding",
+        back_populates="transcript_interval",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class PremiumVerificationInterval(Base):
+    __tablename__ = "premium_verification_intervals"
+    __table_args__ = (
+        UniqueConstraint("project_id", "interval_id", name="uq_premium_verification_project_interval"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_id = Column(Integer, ForeignKey("video_intervals.id"), nullable=False, index=True)
+    interval_index = Column(Integer, nullable=False)
+    start_time_seconds = Column(Integer, nullable=False)
+    end_time_seconds = Column(Integer, nullable=False)
+
+    question_type = Column(String(100), nullable=True)
+    timestamp_reference = Column(String(50), nullable=True)
+    visual_evidence_summary = Column(Text, nullable=True)
+    verification_status = Column(String(50), nullable=True)
+    answer = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+    video = relationship("Video")
+    interval = relationship("VideoInterval")
+    embedding_record = relationship(
+        "PremiumVerificationIntervalEmbedding",
+        back_populates="verification_interval",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
 class PremiumStructuralIntervalEmbedding(Base):
     __tablename__ = "premium_structural_interval_embeddings"
 
@@ -612,6 +691,42 @@ class PremiumPerformanceIntervalEmbedding(Base):
 
     performance_interval = relationship(
         "PremiumPerformanceInterval",
+        back_populates="embedding_record",
+    )
+
+
+class PremiumTranscriptIntervalEmbedding(Base):
+    __tablename__ = "premium_transcript_interval_embeddings"
+
+    transcript_interval_id = Column(
+        Integer,
+        ForeignKey("premium_transcript_intervals.id"),
+        primary_key=True,
+    )
+    combined_text = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    transcript_interval = relationship(
+        "PremiumTranscriptInterval",
+        back_populates="embedding_record",
+    )
+
+
+class PremiumVerificationIntervalEmbedding(Base):
+    __tablename__ = "premium_verification_interval_embeddings"
+
+    verification_interval_id = Column(
+        Integer,
+        ForeignKey("premium_verification_intervals.id"),
+        primary_key=True,
+    )
+    combined_text = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    verification_interval = relationship(
+        "PremiumVerificationInterval",
         back_populates="embedding_record",
     )
 
@@ -694,3 +809,139 @@ class IntervalEmbedding(Base):
 
     video = relationship("Video")
     interval = relationship("VideoInterval")
+
+
+class AnalysisInterval(Base):
+    __tablename__ = "analysis_intervals"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "granularity",
+            "interval_index",
+            "sub_index",
+            name="uq_analysis_interval_slot",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    parent_interval_id = Column(
+        Integer,
+        ForeignKey("analysis_intervals.id"),
+        nullable=True,
+        index=True,
+    )
+    granularity = Column(String(32), nullable=False, index=True)  # interval | sub_interval
+    interval_index = Column(Integer, nullable=False, default=-1)
+    sub_index = Column(Integer, nullable=False, default=-1)
+    start_time_seconds = Column(Integer, nullable=False, index=True)
+    end_time_seconds = Column(Integer, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+    video = relationship("Video")
+    parent_interval = relationship(
+        "AnalysisInterval",
+        remote_side=[id],
+        backref="child_intervals",
+    )
+
+
+class AnalysisRecord(Base):
+    __tablename__ = "analysis_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "interval_id",
+            "analysis_type",
+            name="uq_analysis_record_scope",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    video_id = Column(Integer, ForeignKey("videos.id"), nullable=False, index=True)
+    interval_id = Column(
+        Integer,
+        ForeignKey("analysis_intervals.id"),
+        nullable=False,
+        index=True,
+    )
+    analysis_type = Column(String(64), nullable=False, index=True)
+    source_pass = Column(Integer, nullable=True)
+    status = Column(String(20), nullable=False, default="completed", index=True)
+    summary_text = Column(Text, nullable=True)
+    payload_json = Column(Text, nullable=True)
+    confidence = Column(Float, nullable=True)
+    schema_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+    video = relationship("Video")
+    interval = relationship("AnalysisInterval")
+    embedding_record = relationship(
+        "AnalysisEmbedding",
+        back_populates="analysis_record",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class AnalysisEmbedding(Base):
+    __tablename__ = "analysis_embeddings"
+
+    analysis_record_id = Column(
+        Integer,
+        ForeignKey("analysis_records.id"),
+        primary_key=True,
+    )
+    embedding = Column(Text, nullable=True)  # JSON list of floats for vector
+    embedding_model = Column(String(64), nullable=False, default="gemini-embedding-001")
+    embedding_dim = Column(Integer, nullable=False, default=3072)
+    embedded_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    analysis_record = relationship(
+        "AnalysisRecord",
+        back_populates="embedding_record",
+    )
+
+
+class AnalysisRun(Base):
+    __tablename__ = "analysis_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    run_type = Column(String(32), nullable=False, index=True)  # vector | premium | full_refresh
+    status = Column(String(20), nullable=False, index=True)  # pending | running | completed | failed
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")

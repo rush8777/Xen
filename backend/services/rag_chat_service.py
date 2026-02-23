@@ -27,6 +27,8 @@ MAX_CONTEXT_CHUNKS = 10
 
 # Rough character budget for injected context (keeps us well within token limits)
 MAX_CONTEXT_CHARS = 100000
+MAX_COURSE_SLIDES = 12
+MIN_COURSE_SLIDES = 6
 
 
 @dataclass
@@ -102,7 +104,7 @@ class RagChatService:
                 else DEFAULT_SIMILARITY_THRESHOLD
             )
 
-            merged_by_window: dict[tuple[int, int], RetrievedInterval] = {}
+            merged_by_window: dict[tuple[str, int, int], RetrievedInterval] = {}
             per_query_limit = max(6, MAX_CONTEXT_CHUNKS)
 
             for query_text, score_multiplier in retrieval_queries:
@@ -122,7 +124,11 @@ class RagChatService:
                     if adjusted_score <= 0:
                         continue
 
-                    key = (interval.start_time_seconds, interval.end_time_seconds)
+                    key = (
+                        interval.source,
+                        interval.start_time_seconds,
+                        interval.end_time_seconds,
+                    )
                     existing = merged_by_window.get(key)
                     if existing is None or adjusted_score > existing.similarity:
                         interval.similarity = adjusted_score
@@ -229,6 +235,392 @@ class RagChatService:
             raise ValueError("Empty response from Gemini")
 
         return text, rag_active, len(context_chunks), context_chunks
+
+    async def detect_course_intent_async(
+        self,
+        *,
+        project: Project,
+        messages: list[dict[str, Any]],
+        user_message: str,
+    ) -> dict[str, Any]:
+        """
+        Detect whether latest user request should trigger a course generation flow.
+        Returns a conservative fallback on any parser/model failure.
+        """
+        latest = (user_message or "").strip()
+        if not latest:
+            return {"is_course_request": False, "confidence": 0.0, "goal": ""}
+
+        recent_messages: list[dict[str, str]] = []
+        for m in messages[-8:]:
+            role = (m.get("role") or "").strip().lower()
+            content = (m.get("content") or "").strip()
+            if role in {"user", "assistant"} and content:
+                recent_messages.append({"role": role, "content": content[:1000]})
+
+        detector_prompt = (
+            "You are an intent classifier for a video-analysis chat assistant.\n"
+            "Decide if the user is asking for a generated learning course/slides/training path.\n"
+            "Use broad detection: requests for coaching plan, improvement program, learning slides, "
+            "or guided lesson should usually be true.\n"
+            "Return strict JSON only with keys:\n"
+            "{\n"
+            '  "is_course_request": boolean,\n'
+            '  "confidence": number,\n'
+            '  "goal": "short string"\n'
+            "}\n"
+            "confidence must be between 0 and 1.\n"
+            "goal should summarize the intended learning/improvement objective."
+        )
+        detector_input = {
+            "project_name": project.name,
+            "latest_user_message": latest,
+            "recent_messages": recent_messages,
+        }
+
+        loop = asyncio.get_running_loop()
+        try:
+            resp = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=self.model,
+                    contents=[json.dumps(detector_input, ensure_ascii=False)],
+                    config=types.GenerateContentConfig(
+                        system_instruction=detector_prompt,
+                        temperature=0.1,
+                        response_mime_type="application/json",
+                    ),
+                ),
+            )
+            payload = self._safe_parse_json_object((resp.text or "").strip()) or {}
+            is_course_request = bool(payload.get("is_course_request"))
+            try:
+                confidence = float(payload.get("confidence", 0.0))
+            except Exception:
+                confidence = 0.0
+            confidence = max(0.0, min(1.0, confidence))
+            goal = str(payload.get("goal") or "").strip()[:240]
+            return {
+                "is_course_request": is_course_request,
+                "confidence": confidence,
+                "goal": goal,
+            }
+        except Exception as exc:
+            logger.warning("[RAG] Course intent detection failed: %s", exc)
+            return {"is_course_request": False, "confidence": 0.0, "goal": ""}
+
+    async def generate_course_async(
+        self,
+        *,
+        project: Project,
+        messages: list[dict[str, Any]],
+        user_message: str,
+        goal: str,
+        course_requirements: Optional[dict[str, Any]] = None,
+        db: Session,
+    ) -> tuple[str, dict[str, Any], bool, int, list[str]]:
+        """
+        Generate structured course data compatible with TeachCanvasKit.
+
+        Returns:
+            (course_summary, course_data, rag_was_active, context_chunks_used, context_chunks)
+        """
+        context_chunks, rag_active = await self.retrieve_project_context_async(
+            project_id=project.id,
+            query=user_message,
+            messages=messages,
+            db=db,
+        )
+
+        context_blob = "\n\n".join(context_chunks) if context_chunks else ""
+        course_prompt = (
+            "You are an expert video growth educator.\n"
+            "Generate an actionable mini-course to improve the user's video performance.\n"
+            "Return strict JSON only with keys:\n"
+            "{\n"
+            '  "course_summary": "string",\n'
+            '  "course_data": {\n'
+            '    "courseTitle": "string",\n'
+            '    "slides": [\n'
+            "      {\n"
+            '        "id": "string",\n'
+            '        "type": "title|text-image|text-only|cards|checklist|quiz",\n'
+            '        "title": "string",\n'
+            '        "subtitle": "string?",\n'
+            '        "body": "string?",\n'
+            '        "buttonLabel": "string?",\n'
+            '        "cards": [{"heading":"string","description":"string","icon":"string?"}]?,\n'
+            '        "items": [{"text":"string","checked":boolean?}]?,\n'
+            '        "quizQuestion": "string?",\n'
+            '        "quizOptions": ["string"]?,\n'
+            '        "correctAnswer": number?\n'
+            "      }\n"
+            "    ]\n"
+            "  }\n"
+            "}\n"
+            "Constraints:\n"
+            "- 6 to 12 slides.\n"
+            "- Include at least 1 checklist slide with concrete action items.\n"
+            "- Include at least 1 quiz slide for reinforcement.\n"
+            "- Recommendations should optimize retention, hook strength, views, likes, engagement when relevant.\n"
+            "- Keep language practical and specific.\n"
+            "- If project context is limited, still produce a useful course and mention data limitations in summary.\n"
+        )
+
+        recent_messages: list[dict[str, str]] = []
+        for m in messages[-8:]:
+            role = (m.get("role") or "").strip().lower()
+            content = (m.get("content") or "").strip()
+            if role in {"user", "assistant"} and content:
+                recent_messages.append({"role": role, "content": content[:900]})
+
+        course_input = {
+            "project_name": project.name,
+            "user_goal": (goal or "").strip(),
+            "latest_user_message": user_message,
+            "recent_messages": recent_messages,
+            "course_requirements": course_requirements or {},
+            "retrieved_context": context_blob[:MAX_CONTEXT_CHARS],
+        }
+
+        loop = asyncio.get_running_loop()
+        resp = await loop.run_in_executor(
+            None,
+            lambda: client.models.generate_content(
+                model=self.model,
+                contents=[json.dumps(course_input, ensure_ascii=False)],
+                config=types.GenerateContentConfig(
+                    system_instruction=course_prompt,
+                    temperature=0.4,
+                    response_mime_type="application/json",
+                ),
+            ),
+        )
+        payload = self._safe_parse_json_object((resp.text or "").strip())
+        if not payload:
+            raise ValueError("Failed to parse course JSON")
+
+        course_summary = str(payload.get("course_summary") or "").strip()
+        course_data = self._sanitize_course_payload(payload.get("course_data"))
+        if not course_data:
+            raise ValueError("Generated course payload failed validation")
+
+        if not course_summary:
+            course_summary = (
+                f"I created a focused course for improving '{project.name}' with "
+                "step-by-step slides and a quiz."
+            )
+        course_summary = course_summary[:700]
+        return course_summary, course_data, rag_active, len(context_chunks), context_chunks
+
+    async def plan_course_clarification_async(
+        self,
+        *,
+        project: Project,
+        messages: list[dict[str, Any]],
+        user_message: str,
+        goal: str,
+    ) -> dict[str, Any]:
+        """
+        Ask the model whether course clarification is needed and generate
+        follow-up questions dynamically (no hardcoded questions).
+        """
+        latest = (user_message or "").strip()
+        recent_messages: list[dict[str, str]] = []
+        for m in messages[-10:]:
+            role = (m.get("role") or "").strip().lower()
+            content = (m.get("content") or "").strip()
+            if role in {"user", "assistant"} and content:
+                recent_messages.append({"role": role, "content": content[:1200]})
+
+        planner_prompt = (
+            "You are a course-design intake planner for a video coaching assistant.\n"
+            "Your job: decide if we need clarification before generating a high-quality course.\n"
+            "Do not hardcode fixed questions; adapt questions to the user's request and context.\n"
+            "Prefer asking only essential questions.\n"
+            "Return strict JSON with keys:\n"
+            "{\n"
+            '  "needs_clarification": boolean,\n'
+            '  "assistant_message": "string",\n'
+            '  "questions": [\n'
+            "    {\n"
+            '      "id": "short_snake_case",\n'
+            '      "label": "question text",\n'
+            '      "input_type": "single_choice|multi_choice|short_text|number",\n'
+            '      "options": ["option 1", "option 2", "..."],\n'
+            '      "max_select": number,\n'
+            '      "placeholder": "string",\n'
+            '      "required": boolean\n'
+            "    }\n"
+            "  ],\n"
+            '  "reasoning_brief": "short string"\n'
+            "}\n"
+            "Guidelines:\n"
+            "- Ask 2 to 6 questions when clarification is needed.\n"
+            "- Prefer compact multiple-choice questions (single_choice or multi_choice).\n"
+            "- Keep options short and scannable (usually 3 to 6 options).\n"
+            "- Use short_text only when options cannot cover the likely answers.\n"
+            "- Questions can include scope, topics, audience level, desired slide count, tone, constraints, examples.\n"
+            "- If info is already sufficient, set needs_clarification=false and return an empty questions array.\n"
+            "- assistant_message should be concise and user-facing.\n"
+            "- required should be true only when essential for quality.\n"
+        )
+        planner_input = {
+            "project_name": project.name,
+            "goal": (goal or "").strip(),
+            "latest_user_message": latest,
+            "recent_messages": recent_messages,
+        }
+
+        loop = asyncio.get_running_loop()
+        try:
+            resp = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=self.model,
+                    contents=[json.dumps(planner_input, ensure_ascii=False)],
+                    config=types.GenerateContentConfig(
+                        system_instruction=planner_prompt,
+                        temperature=0.2,
+                        response_mime_type="application/json",
+                    ),
+                ),
+            )
+            payload = self._safe_parse_json_object((resp.text or "").strip()) or {}
+            needs_clarification = bool(payload.get("needs_clarification"))
+            assistant_message = str(payload.get("assistant_message") or "").strip()
+
+            questions_raw = payload.get("questions")
+            questions: list[dict[str, Any]] = []
+            if isinstance(questions_raw, list):
+                for idx, q in enumerate(questions_raw[:6]):
+                    if not isinstance(q, dict):
+                        continue
+                    qid = self._normalize_text(q.get("id"), 40).lower().replace(" ", "_")
+                    if not qid:
+                        qid = f"q_{idx + 1}"
+                    label = self._normalize_text(q.get("label"), 220)
+                    if not label:
+                        continue
+                    input_type = self._normalize_text(q.get("input_type"), 20).lower()
+                    if input_type not in {"single_choice", "multi_choice", "short_text", "number"}:
+                        input_type = "short_text"
+                    placeholder = self._normalize_text(q.get("placeholder"), 180)
+                    required = bool(q.get("required", True))
+                    options: list[str] = []
+                    options_raw = q.get("options")
+                    if isinstance(options_raw, list):
+                        for option in options_raw[:8]:
+                            opt = self._normalize_text(option, 80)
+                            if opt and opt not in options:
+                                options.append(opt)
+                    if input_type in {"single_choice", "multi_choice"} and len(options) < 2:
+                        input_type = "short_text"
+                        options = []
+                    try:
+                        max_select = int(q.get("max_select", 2))
+                    except Exception:
+                        max_select = 2
+                    if max_select < 1:
+                        max_select = 1
+                    if input_type != "multi_choice":
+                        max_select = 1
+                    questions.append(
+                        {
+                            "id": qid,
+                            "label": label,
+                            "input_type": input_type,
+                            "options": options,
+                            "max_select": max_select,
+                            "placeholder": placeholder,
+                            "required": required,
+                        }
+                    )
+
+            if needs_clarification and not questions:
+                needs_clarification = False
+
+            if not assistant_message:
+                if needs_clarification:
+                    assistant_message = (
+                        "Before I generate the course, I need a few details to tailor it well."
+                    )
+                else:
+                    assistant_message = "I have enough information to generate the course."
+
+            return {
+                "needs_clarification": needs_clarification,
+                "assistant_message": assistant_message[:500],
+                "questions": questions,
+            }
+        except Exception as exc:
+            logger.warning("[RAG] Course clarification planning failed: %s", exc)
+            return {
+                "needs_clarification": False,
+                "assistant_message": "",
+                "questions": [],
+            }
+
+    async def generate_chat_heading_async(
+        self,
+        *,
+        project: Project,
+        messages: list[dict[str, Any]],
+    ) -> str:
+        """
+        Generate a short, user-friendly chat heading from recent conversation.
+        """
+        convo: list[dict[str, str]] = []
+        for m in messages[-10:]:
+            role = (m.get("role") or "").strip().lower()
+            content = (m.get("content") or "").strip()
+            if role in {"user", "assistant"} and content:
+                convo.append({"role": role, "content": content[:450]})
+
+        prompt = (
+            "You generate concise chat titles.\n"
+            "Return strict JSON only:\n"
+            "{ \"heading\": \"string\" }\n"
+            "Rules:\n"
+            "- 3 to 8 words.\n"
+            "- Specific to the conversation goal.\n"
+            "- No quotes, emojis, or trailing punctuation.\n"
+            "- Avoid generic titles like 'Chat', 'Conversation', 'Project discussion'.\n"
+        )
+        payload = {
+            "project_name": project.name,
+            "recent_messages": convo,
+        }
+
+        loop = asyncio.get_running_loop()
+        try:
+            resp = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=self.model,
+                    contents=[json.dumps(payload, ensure_ascii=False)],
+                    config=types.GenerateContentConfig(
+                        system_instruction=prompt,
+                        temperature=0.2,
+                        response_mime_type="application/json",
+                    ),
+                ),
+            )
+            parsed = self._safe_parse_json_object((resp.text or "").strip()) or {}
+            heading = self._normalize_text(parsed.get("heading"), 80)
+            if heading:
+                return heading
+        except Exception as exc:
+            logger.warning("[RAG] Chat heading generation failed: %s", exc)
+
+        # Fallback deterministic heading from latest user message.
+        latest_user = ""
+        for m in reversed(messages):
+            if (m.get("role") or "").strip().lower() == "user":
+                latest_user = (m.get("content") or "").strip()
+                break
+        fallback = self._normalize_text(latest_user, 80) or f"{project.name} Analysis"
+        return fallback
 
     def stream_reply(
         self,
@@ -538,6 +930,131 @@ class RagChatService:
             return None
         return None
 
+    def _sanitize_course_payload(self, raw: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(raw, dict):
+            return None
+
+        course_title = self._normalize_text(raw.get("courseTitle"), 120)
+        if not course_title:
+            course_title = "Video Improvement Course"
+
+        raw_slides = raw.get("slides")
+        if not isinstance(raw_slides, list):
+            return None
+
+        allowed_types = {"title", "text-image", "text-only", "cards", "checklist", "quiz"}
+        slides: list[dict[str, Any]] = []
+        has_checklist = False
+        has_quiz = False
+
+        for idx, slide_raw in enumerate(raw_slides[:MAX_COURSE_SLIDES]):
+            if not isinstance(slide_raw, dict):
+                continue
+            slide_type = self._normalize_text(slide_raw.get("type"), 40).lower()
+            if slide_type not in allowed_types:
+                continue
+
+            slide_title = self._normalize_text(slide_raw.get("title"), 140)
+            if not slide_title:
+                continue
+
+            slide_id = self._normalize_text(slide_raw.get("id"), 64) or f"s{idx + 1}"
+            slide: dict[str, Any] = {"id": slide_id, "type": slide_type, "title": slide_title}
+
+            subtitle = self._normalize_text(slide_raw.get("subtitle"), 260)
+            body = self._normalize_text(slide_raw.get("body"), 1800)
+            button_label = self._normalize_text(slide_raw.get("buttonLabel"), 40)
+
+            if subtitle:
+                slide["subtitle"] = subtitle
+            if body:
+                slide["body"] = body
+            if button_label:
+                slide["buttonLabel"] = button_label
+
+            if slide_type in {"text-image", "text-only"} and not body:
+                continue
+
+            if slide_type == "cards":
+                cards_raw = slide_raw.get("cards")
+                if not isinstance(cards_raw, list) or not cards_raw:
+                    continue
+                cards: list[dict[str, Any]] = []
+                for card_raw in cards_raw[:8]:
+                    if not isinstance(card_raw, dict):
+                        continue
+                    heading = self._normalize_text(card_raw.get("heading"), 80)
+                    description = self._normalize_text(card_raw.get("description"), 300)
+                    icon = self._normalize_text(card_raw.get("icon"), 20)
+                    if not heading or not description:
+                        continue
+                    card_obj: dict[str, Any] = {"heading": heading, "description": description}
+                    if icon:
+                        card_obj["icon"] = icon
+                    cards.append(card_obj)
+                if not cards:
+                    continue
+                slide["cards"] = cards
+
+            if slide_type == "checklist":
+                items_raw = slide_raw.get("items")
+                if not isinstance(items_raw, list) or not items_raw:
+                    continue
+                items: list[dict[str, Any]] = []
+                for item_raw in items_raw[:12]:
+                    if isinstance(item_raw, dict):
+                        text = self._normalize_text(item_raw.get("text"), 240)
+                        checked = bool(item_raw.get("checked", False))
+                    else:
+                        text = self._normalize_text(item_raw, 240)
+                        checked = False
+                    if not text:
+                        continue
+                    items.append({"text": text, "checked": checked})
+                if len(items) < 2:
+                    continue
+                slide["items"] = items
+                has_checklist = True
+
+            if slide_type == "quiz":
+                question = self._normalize_text(slide_raw.get("quizQuestion"), 240)
+                options_raw = slide_raw.get("quizOptions")
+                if not question or not isinstance(options_raw, list):
+                    continue
+                quiz_options = [
+                    self._normalize_text(opt, 140)
+                    for opt in options_raw[:6]
+                    if self._normalize_text(opt, 140)
+                ]
+                if len(quiz_options) < 2:
+                    continue
+                try:
+                    correct_answer = int(slide_raw.get("correctAnswer", 0))
+                except Exception:
+                    correct_answer = 0
+                if correct_answer < 0 or correct_answer >= len(quiz_options):
+                    correct_answer = 0
+                slide["quizQuestion"] = question
+                slide["quizOptions"] = quiz_options
+                slide["correctAnswer"] = correct_answer
+                has_quiz = True
+
+            slides.append(slide)
+
+        if len(slides) < MIN_COURSE_SLIDES:
+            return None
+        if not has_checklist or not has_quiz:
+            return None
+
+        return {"courseTitle": course_title, "slides": slides}
+
+    def _normalize_text(self, value: Any, max_len: int) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        compact = re.sub(r"\s+", " ", text)
+        return compact[:max_len].strip()
+
     def _build_system_prompt(
         self,
         *,
@@ -668,4 +1185,6 @@ class RagChatService:
         if not text:
             raise ValueError("Empty response from Gemini")
         return text
+
+
 

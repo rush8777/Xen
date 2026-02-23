@@ -90,3 +90,67 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom Purple Scrollbar */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent !important;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent !important;
+  border-radius: 4px;
+  border: none !important;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: transparent !important;
+}
+
+html.is-scrolling-now::-webkit-scrollbar,
+.is-scrolling-now::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html.is-scrolling-now::-webkit-scrollbar-thumb,
+.is-scrolling-now::-webkit-scrollbar-thumb {
+  background: #9333ea !important;
+}
+
+html.is-scrolling-now::-webkit-scrollbar-thumb:hover,
+.is-scrolling-now::-webkit-scrollbar-thumb:hover {
+  background: #7c3aed !important;
+}
+
+/* Target any element that might have scrollbar background */
+*::-webkit-scrollbar-track {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+}
+
+html.is-scrolling-now,
+.is-scrolling-now {
+  scrollbar-width: thin;
+  scrollbar-color: #9333ea transparent;
+}

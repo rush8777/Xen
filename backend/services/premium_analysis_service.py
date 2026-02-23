@@ -8,7 +8,13 @@ import re
 from datetime import datetime
 from typing import Optional
 
-from .premium_prompts import PREMIUM_PROMPT_1, PREMIUM_PROMPT_2, PREMIUM_PROMPT_3
+from .premium_prompts import (
+    PREMIUM_PROMPT_1,
+    PREMIUM_PROMPT_2,
+    PREMIUM_PROMPT_3,
+    PREMIUM_PROMPT_4,
+    PREMIUM_PROMPT_5,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +36,23 @@ def _extract_json_container(text: str) -> str:
     return text
 
 
+def _extract_first_valid_json_object(text: str) -> str:
+    """
+    Extract the first decodable JSON object from model output.
+    This avoids greedy first-{ / last-} slicing when extra text is present.
+    """
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"[{[]", text):
+        start = match.start()
+        try:
+            parsed, end = decoder.raw_decode(text[start:])
+            if isinstance(parsed, dict):
+                return text[start:start + end]
+        except Exception:
+            continue
+    return text
+
+
 def _quote_unquoted_keys(text: str) -> str:
     # Convert JSON-like object keys such as {foo: 1} to {"foo": 1}.
     return re.sub(
@@ -41,7 +64,16 @@ def _quote_unquoted_keys(text: str) -> str:
 
 def _parse_json_with_fallbacks(text: str) -> dict:
     candidate = _strip_code_fence(text)
+    candidate = candidate.replace("\ufeff", "")
+    candidate = candidate.replace("“", "\"").replace("”", "\"").replace("’", "'")
+    candidate = candidate.replace("\u2013", "-").replace("\u2014", "-")
+    candidate = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", candidate)
+
     candidates: list[str] = [candidate]
+
+    extracted_first = _extract_first_valid_json_object(candidate)
+    if extracted_first != candidate:
+        candidates.append(extracted_first)
 
     extracted = _extract_json_container(candidate)
     if extracted != candidate:
@@ -58,6 +90,14 @@ def _parse_json_with_fallbacks(text: str) -> dict:
             quoted_no_trailing = re.sub(r",(\s*[}\]])", r"\1", quoted_keys)
             if quoted_no_trailing != quoted_keys:
                 candidates.append(quoted_no_trailing)
+        # Heuristic: insert a missing comma between a closed string and next object key.
+        missing_comma_between_keys = re.sub(
+            r'(")\s*("(?=[^"]+"\s*:))',
+            r'\1,\2',
+            raw,
+        )
+        if missing_comma_between_keys != raw:
+            candidates.append(missing_comma_between_keys)
 
     seen: set[str] = set()
     last_error: Exception | None = None
@@ -159,6 +199,39 @@ def _build_performance_text(row: "PremiumPerformanceInterval") -> str:
     return "\n".join(parts).strip()
 
 
+def _build_transcript_text(row: "PremiumTranscriptInterval") -> str:
+    text = (row.transcript_text or "").strip()
+    if not text:
+        return ""
+    return f"Transcript text: {text}"
+
+
+def _build_verification_text(row: "PremiumVerificationInterval") -> str:
+    parts: list[str] = []
+    for label, value in [
+        ("Question type", row.question_type),
+        ("Timestamp reference", row.timestamp_reference),
+        ("Visual evidence summary", row.visual_evidence_summary),
+        ("Verification status", row.verification_status),
+        ("Answer", row.answer),
+    ]:
+        if value is not None and str(value).strip():
+            parts.append(f"{label}: {value}")
+    return "\n".join(parts).strip()
+
+
+def _parse_timestamp_seconds(timestamp_ref: object) -> Optional[int]:
+    if not isinstance(timestamp_ref, str):
+        return None
+    cleaned = timestamp_ref.strip().replace("–", "-").replace("—", "-")
+    match = re.match(r"^\s*(\d{1,2}):(\d{2})", cleaned)
+    if not match:
+        return None
+    minutes = int(match.group(1))
+    seconds = int(match.group(2))
+    return minutes * 60 + seconds
+
+
 async def _embed_texts(texts: list[str], *, chunk_size: int = 64) -> list[list[float] | None]:
     """
     Generate embeddings for a list of texts.
@@ -215,7 +288,7 @@ async def _call_with_retry(
             return await call_gemini_with_cached_video(
                 cached_content_name=cached_content_name,
                 prompt=prompt,
-                response_mime_type="text/plain",
+                response_mime_type="application/json",
             )
         except Exception as exc:
             last_error = exc
@@ -238,18 +311,22 @@ async def generate_premium_analysis_for_project(
     prompt_1: Optional[str] = None,
     prompt_2: Optional[str] = None,
     prompt_3: Optional[str] = None,
+    prompt_4: Optional[str] = None,
+    prompt_5: Optional[str] = None,
     max_retries: int = 3,
 ) -> None:
     """
-    Background coroutine: generate premium 3-pass analysis for the given project.
+    Background coroutine: generate premium 5-pass analysis for the given project.
 
     Flow:
       1. Load project and validate cached video exists.
       2. Mark project + premium analysis record as 'pending'.
-      3. Run 3 sequential prompts:
+      3. Run 5 sequential prompts:
          - Pass 1: Structural mechanics extraction (cached video).
          - Pass 2: Psychological leverage analysis (Pass 1 input).
          - Pass 3: Performance modeling (Pass 1 + Pass 2 inputs).
+         - Pass 4: Transcript extraction (cached video + prior passes context).
+         - Pass 5: Visual verification (cached video + prior passes context).
       4. Store outputs and mark 'completed' (or 'failed' on error).
     """
     from ..database import SessionLocal
@@ -263,12 +340,23 @@ async def generate_premium_analysis_for_project(
         PremiumPsychologicalIntervalEmbedding,
         PremiumPerformanceInterval,
         PremiumPerformanceIntervalEmbedding,
+        PremiumTranscriptInterval,
+        PremiumTranscriptIntervalEmbedding,
+        PremiumVerificationInterval,
+        PremiumVerificationIntervalEmbedding,
         VideoInterval,
+    )
+    from .unified_analysis_storage import (
+        upsert_analysis_embedding,
+        upsert_analysis_interval,
+        upsert_analysis_record,
     )
 
     p1 = prompt_1 or PREMIUM_PROMPT_1
     p2 = prompt_2 or PREMIUM_PROMPT_2
     p3 = prompt_3 or PREMIUM_PROMPT_3
+    p4 = prompt_4 or PREMIUM_PROMPT_4
+    p5 = prompt_5 or PREMIUM_PROMPT_5
 
     db = SessionLocal()
     try:
@@ -341,6 +429,31 @@ async def generate_premium_analysis_for_project(
             max_retries=max_retries,
         )
 
+        # Pass 4: Transcript extraction
+        pass_4_prompt = (
+            f"{p4}\n\nSTRUCTURAL MECHANICS OUTPUT:\n{pass_1_output}"
+            f"\n\nPSYCHOLOGICAL LEVERAGE OUTPUT:\n{pass_2_output}"
+            f"\n\nPERFORMANCE MODELING OUTPUT:\n{pass_3_output}"
+        )
+        pass_4_output = await _call_with_retry(
+            cached_content_name=project.gemini_cached_content_name,
+            prompt=pass_4_prompt,
+            max_retries=max_retries,
+        )
+
+        # Pass 5: Visual verification
+        pass_5_prompt = (
+            f"{p5}\n\nSTRUCTURAL MECHANICS OUTPUT:\n{pass_1_output}"
+            f"\n\nPSYCHOLOGICAL LEVERAGE OUTPUT:\n{pass_2_output}"
+            f"\n\nPERFORMANCE MODELING OUTPUT:\n{pass_3_output}"
+            f"\n\nTRANSCRIPT OUTPUT:\n{pass_4_output}"
+        )
+        pass_5_output = await _call_with_retry(
+            cached_content_name=project.gemini_cached_content_name,
+            prompt=pass_5_prompt,
+            max_retries=max_retries,
+        )
+
         def _intervals_from(data: dict) -> list[dict]:
             intervals = data.get("intervals")
             if isinstance(intervals, list):
@@ -351,10 +464,14 @@ async def generate_premium_analysis_for_project(
         pass_1_json = _parse_json_with_fallbacks(pass_1_output)
         pass_2_json = _parse_json_with_fallbacks(pass_2_output)
         pass_3_json = _parse_json_with_fallbacks(pass_3_output)
+        pass_4_json = _parse_json_with_fallbacks(pass_4_output)
+        pass_5_json = _parse_json_with_fallbacks(pass_5_output)
 
         pass_1_intervals = _intervals_from(pass_1_json)
         pass_2_intervals = _intervals_from(pass_2_json)
         pass_3_intervals = _intervals_from(pass_3_json)
+        pass_4_intervals = _intervals_from(pass_4_json)
+        pass_5_intervals = _intervals_from(pass_5_json)
 
         # Build interval lookup by index from DB (authoritative timeline)
         db_intervals = (
@@ -363,6 +480,18 @@ async def generate_premium_analysis_for_project(
             .all()
         )
         interval_by_index = {i.interval_index: i for i in db_intervals}
+
+        if not pass_5_intervals and isinstance(pass_5_json, dict):
+            inferred_index: int | None = None
+            ts_start = _parse_timestamp_seconds(pass_5_json.get("timestamp_reference"))
+            if ts_start is not None:
+                inferred_index = ts_start // 20
+            if inferred_index is None or inferred_index not in interval_by_index:
+                inferred_index = 0 if 0 in interval_by_index else None
+            if inferred_index is not None:
+                pass_5_item = dict(pass_5_json)
+                pass_5_item["interval_index"] = inferred_index
+                pass_5_intervals = [pass_5_item]
 
         def _normalize_yes_no(value: object) -> Optional[int]:
             if isinstance(value, bool):
@@ -381,6 +510,8 @@ async def generate_premium_analysis_for_project(
             pass_1: dict | None = None,
             pass_2: dict | None = None,
             pass_3: dict | None = None,
+            pass_4: dict | None = None,
+            pass_5: dict | None = None,
         ) -> None:
             interval = interval_by_index.get(interval_index)
             if not interval:
@@ -537,8 +668,64 @@ async def generate_premium_analysis_for_project(
                 perf_record.highest_leverage_target = highest.get("target")
                 perf_record.highest_leverage_justification = highest.get("justification_50_words")
 
+            if pass_4 is not None:
+                transcript_record = (
+                    db.query(PremiumTranscriptInterval)
+                    .filter(
+                        PremiumTranscriptInterval.project_id == project_id,
+                        PremiumTranscriptInterval.interval_id == interval.id,
+                    )
+                    .first()
+                )
+                if not transcript_record:
+                    transcript_record = PremiumTranscriptInterval(
+                        project_id=project_id,
+                        video_id=project.video_id,
+                        interval_id=interval.id,
+                        interval_index=interval.interval_index,
+                        start_time_seconds=interval.start_time_seconds,
+                        end_time_seconds=interval.end_time_seconds,
+                    )
+                    db.add(transcript_record)
+                    db.flush()
+
+                transcript_record.transcript_text = pass_4.get("transcript_text")
+
+            if pass_5 is not None:
+                verification_record = (
+                    db.query(PremiumVerificationInterval)
+                    .filter(
+                        PremiumVerificationInterval.project_id == project_id,
+                        PremiumVerificationInterval.interval_id == interval.id,
+                    )
+                    .first()
+                )
+                if not verification_record:
+                    verification_record = PremiumVerificationInterval(
+                        project_id=project_id,
+                        video_id=project.video_id,
+                        interval_id=interval.id,
+                        interval_index=interval.interval_index,
+                        start_time_seconds=interval.start_time_seconds,
+                        end_time_seconds=interval.end_time_seconds,
+                    )
+                    db.add(verification_record)
+                    db.flush()
+
+                verification_record.question_type = pass_5.get("question_type")
+                verification_record.timestamp_reference = pass_5.get("timestamp_reference")
+                verification_record.visual_evidence_summary = pass_5.get("visual_evidence_summary")
+                verification_record.verification_status = pass_5.get("verification_status")
+                verification_record.answer = pass_5.get("answer")
+
             # Keep legacy JSON blobs for compatibility (optional)
-            if pass_1 is not None or pass_2 is not None or pass_3 is not None:
+            if (
+                pass_1 is not None
+                or pass_2 is not None
+                or pass_3 is not None
+                or pass_4 is not None
+                or pass_5 is not None
+            ):
                 record = (
                     db.query(PremiumIntervalAnalysis)
                     .filter(
@@ -564,6 +751,10 @@ async def generate_premium_analysis_for_project(
                     record.pass_2_json = json.dumps(pass_2)
                 if pass_3 is not None:
                     record.pass_3_json = json.dumps(pass_3)
+                if pass_4 is not None:
+                    record.pass_4_json = json.dumps(pass_4)
+                if pass_5 is not None:
+                    record.pass_5_json = json.dumps(pass_5)
 
         for item in pass_1_intervals:
             idx = int(item.get("interval_index", -1))
@@ -579,6 +770,16 @@ async def generate_premium_analysis_for_project(
             idx = int(item.get("interval_index", -1))
             if idx >= 0:
                 _upsert_interval(idx, pass_3=item)
+
+        for item in pass_4_intervals:
+            idx = int(item.get("interval_index", -1))
+            if idx >= 0:
+                _upsert_interval(idx, pass_4=item)
+
+        for item in pass_5_intervals:
+            idx = int(item.get("interval_index", -1))
+            if idx >= 0:
+                _upsert_interval(idx, pass_5=item)
 
         db.flush()
 
@@ -598,14 +799,73 @@ async def generate_premium_analysis_for_project(
             .filter(PremiumPerformanceInterval.project_id == project_id)
             .all()
         )
+        transcript_rows = (
+            db.query(PremiumTranscriptInterval)
+            .filter(PremiumTranscriptInterval.project_id == project_id)
+            .all()
+        )
+        verification_rows = (
+            db.query(PremiumVerificationInterval)
+            .filter(PremiumVerificationInterval.project_id == project_id)
+            .all()
+        )
 
         structural_texts = [_build_structural_text(r) for r in structural_rows]
         psychological_texts = [_build_psychological_text(r) for r in psychological_rows]
         performance_texts = [_build_performance_text(r) for r in performance_rows]
+        transcript_texts = [_build_transcript_text(r) for r in transcript_rows]
+        verification_texts = [_build_verification_text(r) for r in verification_rows]
 
         structural_embeddings = await _embed_texts(structural_texts)
         psychological_embeddings = await _embed_texts(psychological_texts)
         performance_embeddings = await _embed_texts(performance_texts)
+        transcript_embeddings = await _embed_texts(transcript_texts)
+        verification_embeddings = await _embed_texts(verification_texts)
+
+        def _model_payload(row: object) -> dict:
+            payload: dict[str, object] = {}
+            for col in row.__table__.columns:  # type: ignore[attr-defined]
+                value = getattr(row, col.name)
+                if isinstance(value, datetime):
+                    payload[col.name] = value.isoformat()
+                else:
+                    payload[col.name] = value
+            return payload
+
+        def _upsert_unified_premium(
+            *,
+            row: object,
+            analysis_type: str,
+            source_pass: int,
+            text: str,
+            emb: list[float] | None,
+        ) -> None:
+            unified_interval = upsert_analysis_interval(
+                db,
+                project_id=project_id,
+                video_id=project.video_id,
+                granularity="interval",
+                interval_index=getattr(row, "interval_index", -1) or -1,
+                sub_index=-1,
+                start_time_seconds=int(getattr(row, "start_time_seconds", 0) or 0),
+                end_time_seconds=int(getattr(row, "end_time_seconds", 0) or 0),
+            )
+            unified_record = upsert_analysis_record(
+                db,
+                project_id=project_id,
+                video_id=project.video_id,
+                interval_id=unified_interval.id,
+                analysis_type=analysis_type,
+                source_pass=source_pass,
+                status="completed",
+                summary_text=text or None,
+                payload=_model_payload(row),
+            )
+            upsert_analysis_embedding(
+                db,
+                analysis_record_id=unified_record.id,
+                embedding=emb,
+            )
 
         for row, text, emb in zip(structural_rows, structural_texts, structural_embeddings):
             embedding_record = (
@@ -622,6 +882,13 @@ async def generate_premium_analysis_for_project(
                 db.add(embedding_record)
             embedding_record.combined_text = text or None
             embedding_record.embedding = _serialize_embedding(emb)
+            _upsert_unified_premium(
+                row=row,
+                analysis_type="premium_structural",
+                source_pass=1,
+                text=text,
+                emb=emb,
+            )
 
         for row, text, emb in zip(psychological_rows, psychological_texts, psychological_embeddings):
             embedding_record = (
@@ -638,6 +905,13 @@ async def generate_premium_analysis_for_project(
                 db.add(embedding_record)
             embedding_record.combined_text = text or None
             embedding_record.embedding = _serialize_embedding(emb)
+            _upsert_unified_premium(
+                row=row,
+                analysis_type="premium_psychological",
+                source_pass=2,
+                text=text,
+                emb=emb,
+            )
 
         for row, text, emb in zip(performance_rows, performance_texts, performance_embeddings):
             embedding_record = (
@@ -654,10 +928,65 @@ async def generate_premium_analysis_for_project(
                 db.add(embedding_record)
             embedding_record.combined_text = text or None
             embedding_record.embedding = _serialize_embedding(emb)
+            _upsert_unified_premium(
+                row=row,
+                analysis_type="premium_performance",
+                source_pass=3,
+                text=text,
+                emb=emb,
+            )
+
+        for row, text, emb in zip(transcript_rows, transcript_texts, transcript_embeddings):
+            embedding_record = (
+                db.query(PremiumTranscriptIntervalEmbedding)
+                .filter(
+                    PremiumTranscriptIntervalEmbedding.transcript_interval_id == row.id
+                )
+                .first()
+            )
+            if not embedding_record:
+                embedding_record = PremiumTranscriptIntervalEmbedding(
+                    transcript_interval_id=row.id,
+                )
+                db.add(embedding_record)
+            embedding_record.combined_text = text or None
+            embedding_record.embedding = _serialize_embedding(emb)
+            _upsert_unified_premium(
+                row=row,
+                analysis_type="premium_transcript",
+                source_pass=4,
+                text=text,
+                emb=emb,
+            )
+
+        for row, text, emb in zip(verification_rows, verification_texts, verification_embeddings):
+            embedding_record = (
+                db.query(PremiumVerificationIntervalEmbedding)
+                .filter(
+                    PremiumVerificationIntervalEmbedding.verification_interval_id == row.id
+                )
+                .first()
+            )
+            if not embedding_record:
+                embedding_record = PremiumVerificationIntervalEmbedding(
+                    verification_interval_id=row.id,
+                )
+                db.add(embedding_record)
+            embedding_record.combined_text = text or None
+            embedding_record.embedding = _serialize_embedding(emb)
+            _upsert_unified_premium(
+                row=row,
+                analysis_type="premium_verification",
+                source_pass=5,
+                text=text,
+                emb=emb,
+            )
 
         analysis.pass_1_output = pass_1_output
         analysis.pass_2_output = pass_2_output
         analysis.pass_3_output = pass_3_output
+        analysis.pass_4_output = pass_4_output
+        analysis.pass_5_output = pass_5_output
         analysis.status = "completed"
         analysis.generated_at = datetime.utcnow()
         analysis.error = None

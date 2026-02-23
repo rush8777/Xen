@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
 import re
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -49,10 +52,22 @@ class ChatMessageDTO(BaseModel):
     created_at: str
 
 
+class RecentChatDTO(BaseModel):
+    id: int
+    project_id: int
+    project_name: str
+    project_category: str | None = None
+    name: str
+    platform: str | None = None
+    updated_at: str
+    last_message_at: str | None = None
+
+
 class ChatSendMessageRequest(BaseModel):
     chat_id: int | None = None
     message: str
     user_id: int | None = None
+    course_clarification_answers: dict[str, str] | None = None
 
 
 class ProjectRef(BaseModel):
@@ -67,9 +82,35 @@ class ChatSessionResponse(BaseModel):
     rag_active: bool = False
     context_chunks_used: int = 0
     context_chunks: list[str] = []
+    course_generated: bool = False
+    course_summary: str | None = None
+    course_data: dict | None = None
+    course_template: str | None = None
+    course_clarification_needed: bool = False
+    course_clarification_questions: list[dict] = []
 
 
 _MENTION_RE = re.compile(r"@([^\n@]+)")
+_COURSE_PAYLOAD_PREFIX = "[[COURSE_PAYLOAD_V1:"
+_COURSE_PAYLOAD_SUFFIX = "]]"
+
+
+def _build_stored_assistant_content(
+    *,
+    summary: str,
+    course_data: dict | None,
+    course_template: str | None,
+) -> str:
+    if not course_data:
+        return summary
+    payload = {
+        "course_data": course_data,
+        "course_template": course_template or "default",
+    }
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    ).decode("ascii")
+    return f"{summary}\n\n{_COURSE_PAYLOAD_PREFIX}{encoded}{_COURSE_PAYLOAD_SUFFIX}"
 
 
 def _extract_project_name_from_message(message: str) -> str | None:
@@ -81,9 +122,11 @@ def _extract_project_name_from_message(message: str) -> str | None:
     if not message:
         return None
 
-    match = _MENTION_RE.search(message)
-    if not match:
+    matches = list(_MENTION_RE.finditer(message))
+    if not matches:
         return None
+    # Use the latest mention in the message so users can override an earlier one.
+    match = matches[-1]
 
     raw = (match.group(1) or "").strip()
     # Trim trailing punctuation (common when users type '@Project!' etc.)
@@ -148,6 +191,89 @@ def _resolve_project_by_name(*, db: Session, project_name: str, user_id: int | N
         status_code=404,
         detail=f'Project not found for "@{project_name}". Available projects: {", ".join([f"{p.name}" for p in all_projects])}',
     )
+
+
+def _resolve_default_project_for_new_chat(*, db: Session, user_id: int | None) -> Project | None:
+    query = db.query(Project).join(Chat, Chat.project_id == Project.id)
+    if user_id is not None:
+        query = query.filter(Project.user_id == user_id)
+    return query.order_by(Chat.updated_at.desc()).first()
+
+
+def _resolve_project_for_message(
+    *,
+    db: Session,
+    chat: Chat | None,
+    message: str,
+    user_id: int | None,
+) -> Project:
+    """
+    Resolve target project for the current message.
+    Priority:
+      1) Latest @mention in message.
+      2) Existing chat.project_id (if chat provided).
+      3) Most recently updated project with a chat.
+    """
+    project_name = _extract_project_name_from_message(message)
+    if project_name:
+        return _resolve_project_by_name(
+            db=db,
+            project_name=project_name,
+            user_id=user_id,
+        )
+
+    if chat is not None:
+        project = db.query(Project).filter(Project.id == chat.project_id).first()
+        if project:
+            return project
+        raise HTTPException(status_code=404, detail="Project not found for chat")
+
+    project = _resolve_default_project_for_new_chat(db=db, user_id=user_id)
+    if project:
+        return project
+    raise HTTPException(
+        status_code=400,
+        detail='No project specified and no recent project found. Start your message with a project mention like "@My Project".',
+    )
+
+
+def _is_default_chat_name(chat_name: str, project_name: str) -> bool:
+    name = (chat_name or "").strip().lower()
+    project = (project_name or "").strip().lower()
+    return name in {
+        "",
+        "new chat",
+        "untitled chat",
+        f"{project} chat",
+    }
+
+
+async def _maybe_update_chat_heading_async(
+    *,
+    rag: RagChatService,
+    db: Session,
+    chat: Chat,
+    project: Project,
+) -> None:
+    if not _is_default_chat_name(chat.name, project.name):
+        return
+    rows = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.chat_id == chat.id)
+        .order_by(ChatMessage.created_at.asc())
+        .all()
+    )
+    history = [{"role": r.role, "content": r.content} for r in rows]
+    heading = await rag.generate_chat_heading_async(project=project, messages=history)
+    heading = (heading or "").strip()
+    if not heading:
+        return
+    if heading == chat.name:
+        return
+    chat.name = heading[:120]
+    chat.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(chat)
 
 
 @router.post("/projects/{project_id}/chats", response_model=ChatResponse, status_code=201)
@@ -249,6 +375,41 @@ def list_chat_messages(chat_id: int, db: Session = Depends(get_db)) -> list[Chat
     ]
 
 
+@router.get("/recent-chats", response_model=list[RecentChatDTO])
+def list_recent_chats(
+    limit: int = 10,
+    user_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> list[RecentChatDTO]:
+    safe_limit = max(1, min(50, int(limit)))
+    query = db.query(Chat, Project).join(Project, Project.id == Chat.project_id)
+    if user_id is not None:
+        query = query.filter(Project.user_id == user_id)
+    rows = query.order_by(Chat.updated_at.desc()).limit(safe_limit).all()
+
+    out: list[RecentChatDTO] = []
+    for chat, project in rows:
+        last_message = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.chat_id == chat.id)
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+        out.append(
+            RecentChatDTO(
+                id=chat.id,
+                project_id=project.id,
+                project_name=project.name,
+                project_category=project.category,
+                name=chat.name,
+                platform=chat.platform,
+                updated_at=chat.updated_at.isoformat(),
+                last_message_at=last_message.created_at.isoformat() if last_message else None,
+            )
+        )
+    return out
+
+
 @router.post("/chats/send-message", response_model=ChatSessionResponse)
 async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(get_db)) -> ChatSessionResponse:
     message = (payload.message or "").strip()
@@ -265,17 +426,23 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
         chat = db.query(Chat).filter(Chat.id == payload.chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
-        project = db.query(Project).filter(Project.id == chat.project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found for chat")
+        project = _resolve_project_for_message(
+            db=db,
+            chat=chat,
+            message=message,
+            user_id=payload.user_id,
+        )
+        if chat.project_id != project.id:
+            chat.project_id = project.id
+            db.commit()
+            db.refresh(chat)
     else:
-        project_name = _extract_project_name_from_message(message)
-        if not project_name:
-            raise HTTPException(
-                status_code=400,
-                detail='No project specified. Start your message with a project mention like "@My Project".',
-            )
-        project = _resolve_project_by_name(db=db, project_name=project_name, user_id=payload.user_id)
+        project = _resolve_project_for_message(
+            db=db,
+            chat=None,
+            message=message,
+            user_id=payload.user_id,
+        )
         chat = Chat(
             project_id=project.id,
             name=f"{project.name} Chat",
@@ -288,6 +455,7 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
     # Persist user message
     user_row = ChatMessage(chat_id=chat.id, role="user", content=message)
     db.add(user_row)
+    chat.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(user_row)
 
@@ -300,21 +468,113 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
     )
     history = [{"role": r.role, "content": r.content} for r in history_rows]
 
-    # Generate assistant reply via RAG pipeline
+    # Generate assistant reply via RAG pipeline or course pipeline
     rag_active = False
     context_chunks_used = 0
     context_chunks: list[str] = []
+    course_generated = False
+    course_summary: str | None = None
+    course_data: dict | None = None
+    course_template: str | None = None
+    course_clarification_needed = False
+    course_clarification_questions: list[dict] = []
     try:
-        assistant_text, rag_active, context_chunks_used, context_chunks = await rag.generate_reply_async(
-            project=project, messages=history, user_message=message, db=db
+        provided_clarification_answers = payload.course_clarification_answers or {}
+        course_template = str(provided_clarification_answers.get("course_template") or "default")
+        intent = await rag.detect_course_intent_async(
+            project=project,
+            messages=history,
+            user_message=message,
         )
+        should_generate_course = bool(provided_clarification_answers) or (
+            bool(intent.get("is_course_request")) and float(intent.get("confidence", 0.0)) >= 0.45
+        )
+
+        if should_generate_course:
+            try:
+                if not provided_clarification_answers:
+                    clarification_plan = await rag.plan_course_clarification_async(
+                        project=project,
+                        messages=history,
+                        user_message=message,
+                        goal=str(intent.get("goal") or "").strip(),
+                    )
+                    if clarification_plan.get("needs_clarification"):
+                        course_clarification_needed = True
+                        course_clarification_questions = list(
+                            clarification_plan.get("questions") or []
+                        )
+                        assistant_text = str(
+                            clarification_plan.get("assistant_message")
+                            or "Before generating the course, I need a few details."
+                        )
+                        rag_active = False
+                        context_chunks_used = 0
+                        context_chunks = []
+                    else:
+                        (
+                            assistant_text,
+                            course_data,
+                            rag_active,
+                            context_chunks_used,
+                            context_chunks,
+                        ) = await rag.generate_course_async(
+                            project=project,
+                            messages=history,
+                            user_message=message,
+                            goal=str(intent.get("goal") or "").strip(),
+                            course_requirements=provided_clarification_answers,
+                            db=db,
+                        )
+                        course_generated = True
+                        course_summary = assistant_text
+                else:
+                    (
+                        assistant_text,
+                        course_data,
+                        rag_active,
+                        context_chunks_used,
+                        context_chunks,
+                    ) = await rag.generate_course_async(
+                        project=project,
+                        messages=history,
+                        user_message=message,
+                        goal=str(intent.get("goal") or "").strip(),
+                        course_requirements=provided_clarification_answers,
+                        db=db,
+                    )
+                    course_generated = True
+                    course_summary = assistant_text
+            except Exception:
+                assistant_text, rag_active, context_chunks_used, context_chunks = await rag.generate_reply_async(
+                    project=project, messages=history, user_message=message, db=db
+                )
+        else:
+            assistant_text, rag_active, context_chunks_used, context_chunks = await rag.generate_reply_async(
+                project=project, messages=history, user_message=message, db=db
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Assistant generation failed: {str(e)}")
 
-    assistant_row = ChatMessage(chat_id=chat.id, role="assistant", content=assistant_text)
+    stored_assistant_content = _build_stored_assistant_content(
+        summary=assistant_text,
+        course_data=course_data if course_generated else None,
+        course_template=course_template,
+    )
+    assistant_row = ChatMessage(chat_id=chat.id, role="assistant", content=stored_assistant_content)
     db.add(assistant_row)
+    chat.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(assistant_row)
+    try:
+        await _maybe_update_chat_heading_async(
+            rag=rag,
+            db=db,
+            chat=chat,
+            project=project,
+        )
+    except Exception:
+        pass
 
     # Return full message list (UI can render immediately)
     final_rows = (
@@ -341,6 +601,12 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
         rag_active=rag_active,
         context_chunks_used=context_chunks_used,
         context_chunks=context_chunks or [],
+        course_generated=course_generated,
+        course_summary=course_summary,
+        course_data=course_data,
+        course_template=course_template,
+        course_clarification_needed=course_clarification_needed,
+        course_clarification_questions=course_clarification_questions,
     )
 
 
@@ -360,17 +626,23 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
         chat = db.query(Chat).filter(Chat.id == payload.chat_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
-        project = db.query(Project).filter(Project.id == chat.project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found for chat")
+        project = _resolve_project_for_message(
+            db=db,
+            chat=chat,
+            message=message,
+            user_id=payload.user_id,
+        )
+        if chat.project_id != project.id:
+            chat.project_id = project.id
+            db.commit()
+            db.refresh(chat)
     else:
-        project_name = _extract_project_name_from_message(message)
-        if not project_name:
-            raise HTTPException(
-                status_code=400,
-                detail='No project specified. Start your message with a project mention like "@My Project".',
-            )
-        project = _resolve_project_by_name(db=db, project_name=project_name, user_id=payload.user_id)
+        project = _resolve_project_for_message(
+            db=db,
+            chat=None,
+            message=message,
+            user_id=payload.user_id,
+        )
         chat = Chat(
             project_id=project.id,
             name=f"{project.name} Chat",
@@ -383,6 +655,7 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
     # Persist user message first
     user_row = ChatMessage(chat_id=chat.id, role="user", content=message)
     db.add(user_row)
+    chat.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(user_row)
 
@@ -395,13 +668,105 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
     )
     history = [{"role": r.role, "content": r.content} for r in history_rows]
 
+    token_iter = None
+    rag_active = False
+    context_chunks_used = 0
+    context_chunks: list[str] = []
+    course_generated = False
+    course_summary: str | None = None
+    course_data: dict | None = None
+    course_template: str | None = None
+    course_clarification_needed = False
+    course_clarification_questions: list[dict] = []
+
     try:
-        token_iter, rag_active, context_chunks_used, context_chunks = rag.stream_reply(
-            project=project,
-            messages=history,
-            user_message=message,
-            db=db,
-        )
+        provided_clarification_answers = payload.course_clarification_answers or {}
+        course_template = str(provided_clarification_answers.get("course_template") or "default")
+        loop = asyncio.new_event_loop()
+        try:
+            intent = loop.run_until_complete(
+                rag.detect_course_intent_async(
+                    project=project,
+                    messages=history,
+                    user_message=message,
+                )
+            )
+            should_generate_course = bool(provided_clarification_answers) or (
+                bool(intent.get("is_course_request")) and float(intent.get("confidence", 0.0)) >= 0.45
+            )
+
+            if should_generate_course:
+                try:
+                    if not provided_clarification_answers:
+                        clarification_plan = loop.run_until_complete(
+                            rag.plan_course_clarification_async(
+                                project=project,
+                                messages=history,
+                                user_message=message,
+                                goal=str(intent.get("goal") or "").strip(),
+                            )
+                        )
+                        if clarification_plan.get("needs_clarification"):
+                            course_clarification_needed = True
+                            course_clarification_questions = list(
+                                clarification_plan.get("questions") or []
+                            )
+                            course_summary = str(
+                                clarification_plan.get("assistant_message")
+                                or "Before generating the course, I need a few details."
+                            )
+                        else:
+                            (
+                                course_summary,
+                                course_data,
+                                rag_active,
+                                context_chunks_used,
+                                context_chunks,
+                            ) = loop.run_until_complete(
+                                rag.generate_course_async(
+                                    project=project,
+                                    messages=history,
+                                    user_message=message,
+                                    goal=str(intent.get("goal") or "").strip(),
+                                    course_requirements=provided_clarification_answers,
+                                    db=db,
+                                )
+                            )
+                            course_generated = True
+                    else:
+                        (
+                            course_summary,
+                            course_data,
+                            rag_active,
+                            context_chunks_used,
+                            context_chunks,
+                        ) = loop.run_until_complete(
+                            rag.generate_course_async(
+                                project=project,
+                                messages=history,
+                                user_message=message,
+                                goal=str(intent.get("goal") or "").strip(),
+                                course_requirements=provided_clarification_answers,
+                                db=db,
+                            )
+                        )
+                        course_generated = True
+                except Exception:
+                    token_iter, rag_active, context_chunks_used, context_chunks = rag.stream_reply(
+                        project=project,
+                        messages=history,
+                        user_message=message,
+                        db=db,
+                    )
+            else:
+                token_iter, rag_active, context_chunks_used, context_chunks = rag.stream_reply(
+                    project=project,
+                    messages=history,
+                    user_message=message,
+                    db=db,
+                )
+        finally:
+            loop.close()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Assistant generation failed: {str(e)}")
 
@@ -420,25 +785,56 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
                 "rag_active": rag_active,
                 "context_chunks_used": context_chunks_used,
                 "context_chunks": context_chunks or [],
+                "course_generation_planned": course_generated,
+                "course_clarification_needed": course_clarification_needed,
+                "course_clarification_questions": course_clarification_questions,
+                "course_template": course_template,
             },
         )
 
-        try:
-            for delta in token_iter:
-                assistant_parts.append(delta)
-                yield _sse_event("token", {"delta": delta})
-        except Exception as e:
-            db.rollback()
-            yield _sse_event("error", {"error": f"Streaming generation failed: {str(e)}"})
-            return
+        if course_generated or course_clarification_needed:
+            assistant_text = (course_summary or "").strip()
+        else:
+            try:
+                for delta in token_iter:
+                    assistant_parts.append(delta)
+                    yield _sse_event("token", {"delta": delta})
+            except Exception as e:
+                db.rollback()
+                yield _sse_event("error", {"error": f"Streaming generation failed: {str(e)}"})
+                return
 
-        assistant_text = "".join(assistant_parts).strip()
+            assistant_text = "".join(assistant_parts).strip()
+            if not assistant_text:
+                assistant_text = "No response received."
+
         if not assistant_text:
             assistant_text = "No response received."
 
-        assistant_row = ChatMessage(chat_id=chat.id, role="assistant", content=assistant_text)
+        stored_assistant_content = _build_stored_assistant_content(
+            summary=assistant_text,
+            course_data=course_data if course_generated else None,
+            course_template=course_template,
+        )
+        assistant_row = ChatMessage(chat_id=chat.id, role="assistant", content=stored_assistant_content)
         db.add(assistant_row)
+        chat.updated_at = datetime.utcnow()
         db.commit()
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    _maybe_update_chat_heading_async(
+                        rag=rag,
+                        db=db,
+                        chat=chat,
+                        project=project,
+                    )
+                )
+            finally:
+                loop.close()
+        except Exception:
+            pass
 
         yield _sse_event(
             "done",
@@ -449,6 +845,12 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
                 "rag_active": rag_active,
                 "context_chunks_used": context_chunks_used,
                 "context_chunks": context_chunks or [],
+                "course_generated": course_generated,
+                "course_summary": course_summary,
+                "course_data": course_data,
+                "course_template": course_template,
+                "course_clarification_needed": course_clarification_needed,
+                "course_clarification_questions": course_clarification_questions,
             },
         )
 

@@ -72,6 +72,30 @@ try:
     )
 
     cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS premium_transcript_interval_embeddings (
+            transcript_interval_id INTEGER PRIMARY KEY,
+            combined_text TEXT,
+            embedding TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (transcript_interval_id) REFERENCES premium_transcript_intervals(id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS premium_verification_interval_embeddings (
+            verification_interval_id INTEGER PRIMARY KEY,
+            combined_text TEXT,
+            embedding TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (verification_interval_id) REFERENCES premium_verification_intervals(id)
+        )
+        """
+    )
+
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_premium_structural_interval_embeddings_id ON premium_structural_interval_embeddings(structural_interval_id)"
     )
     cursor.execute(
@@ -79,6 +103,12 @@ try:
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_premium_perf_interval_embeddings_id ON premium_performance_interval_embeddings(performance_interval_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_premium_transcript_interval_embeddings_id ON premium_transcript_interval_embeddings(transcript_interval_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_premium_verification_interval_embeddings_id ON premium_verification_interval_embeddings(verification_interval_id)"
     )
 
     conn.commit()

@@ -51,6 +51,8 @@ try:
             pass_1_json TEXT,
             pass_2_json TEXT,
             pass_3_json TEXT,
+            pass_4_json TEXT,
+            pass_5_json TEXT,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
             UNIQUE(project_id, interval_id)

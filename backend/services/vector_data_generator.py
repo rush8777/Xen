@@ -334,6 +334,7 @@ async def _embed_texts(texts: List[str]) -> List[Optional[List[float]]]:
 
 def _insert_vector_data(
     db: Session,
+    project_id: int,
     video_id: int,
     intervals_data: List[Dict[str, Any]],
 ) -> None:
@@ -343,11 +344,18 @@ def _insert_vector_data(
     (idempotent).
     """
     from ..models import VideoInterval, VideoSubInterval, SubVideoIntervalEmbedding  # noqa: E402
+    from .unified_analysis_storage import (
+        upsert_analysis_embedding,
+        upsert_analysis_interval,
+        upsert_analysis_record,
+    )
 
     for interval_dict in intervals_data:
         interval_index = int(interval_dict.get("interval_index", 0))
         start_sec = int(interval_dict.get("start_time_seconds", 0))
         end_sec = int(interval_dict.get("end_time_seconds", start_sec + 20))
+        interval_text = interval_dict.get("combined_interval_text")
+        interval_embedding = interval_dict.get("interval_embedding")
 
         # ------------------------------------------------------------------
         # Upsert VideoInterval
@@ -371,11 +379,41 @@ def _insert_vector_data(
             db.add(db_interval)
             db.flush()  # get db_interval.id
 
+        unified_interval = upsert_analysis_interval(
+            db,
+            project_id=project_id,
+            video_id=video_id,
+            granularity="interval",
+            interval_index=interval_index,
+            sub_index=-1,
+            start_time_seconds=start_sec,
+            end_time_seconds=end_sec,
+            parent_interval_id=None,
+        )
+        interval_record = upsert_analysis_record(
+            db,
+            project_id=project_id,
+            video_id=video_id,
+            interval_id=unified_interval.id,
+            analysis_type="vector_interval_summary",
+            source_pass=None,
+            status="completed",
+            summary_text=interval_text,
+            payload=interval_dict,
+        )
+        upsert_analysis_embedding(
+            db,
+            analysis_record_id=interval_record.id,
+            embedding=interval_embedding if isinstance(interval_embedding, list) else None,
+        )
+
         # ------------------------------------------------------------------
         # Upsert VideoSubIntervals
         # ------------------------------------------------------------------
         for sub_dict in interval_dict.get("sub_intervals", []):
             sub_start = int(sub_dict.get("start_time_seconds", start_sec))
+            sub_end = int(sub_dict.get("end_time_seconds", sub_start + 20))
+            sub_index = int(sub_dict.get("sub_index", 0))
 
             existing_sub = (
                 db.query(VideoSubInterval)
@@ -386,6 +424,35 @@ def _insert_vector_data(
                 .first()
             )
             serialized_embedding = _serialize_embedding(sub_dict.get("embedding"))
+            unified_sub = upsert_analysis_interval(
+                db,
+                project_id=project_id,
+                video_id=video_id,
+                granularity="sub_interval",
+                interval_index=interval_index,
+                sub_index=sub_index,
+                start_time_seconds=sub_start,
+                end_time_seconds=sub_end,
+                parent_interval_id=unified_interval.id,
+            )
+            sub_record = upsert_analysis_record(
+                db,
+                project_id=project_id,
+                video_id=video_id,
+                interval_id=unified_sub.id,
+                analysis_type="vision_raw",
+                source_pass=None,
+                status="completed",
+                summary_text=sub_dict.get("raw_combined_text"),
+                payload=sub_dict,
+            )
+            upsert_analysis_embedding(
+                db,
+                analysis_record_id=sub_record.id,
+                embedding=sub_dict.get("embedding")
+                if isinstance(sub_dict.get("embedding"), list)
+                else None,
+            )
             if existing_sub:
                 if serialized_embedding:
                     existing_embedding = (
@@ -401,16 +468,16 @@ def _insert_vector_data(
                             SubVideoIntervalEmbedding(
                                 sub_interval_id=existing_sub.id,
                                 embedding=serialized_embedding,
-                            )
+                )
                         )
                 continue  # skip duplicate
 
             new_sub = VideoSubInterval(
                 interval_id=db_interval.id,
                 video_id=video_id,
-                sub_index=int(sub_dict.get("sub_index", 0)),
+                sub_index=sub_index,
                 start_time_seconds=sub_start,
-                end_time_seconds=int(sub_dict.get("end_time_seconds", sub_start + 20)),
+                end_time_seconds=sub_end,
                 camera_frame=sub_dict.get("camera_frame"),
                 environment_background=sub_dict.get("environment_background"),
                 people_figures=sub_dict.get("people_figures"),
@@ -582,6 +649,7 @@ async def generate_vector_data_for_project(
             None,
             _insert_vector_data,
             db,
+            project_id,
             project.video_id,
             intervals_list,
         )

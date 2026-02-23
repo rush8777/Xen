@@ -15,6 +15,9 @@ interface ChatMessageProps {
   showActions?: boolean;
   ragActive?: boolean;
   contextChunksUsed?: number;
+  courseAvailable?: boolean;
+  courseTemplate?: "default" | "sonos_typo" | "pixel_brutalist";
+  onOpenCourse?: () => void;
 }
 
 interface TopBarProps {
@@ -150,7 +153,17 @@ const TopBar = ({ onNewChat, ragActive, onToggleContext, contextOpen }: TopBarPr
 };
 
 // ── Chat Message ───────────────────────────────────────────────────────────────
-const ChatMessage = ({ content, isUser, isStreaming = false, showActions = false, ragActive, contextChunksUsed }: ChatMessageProps) => {
+const ChatMessage = ({
+  content,
+  isUser,
+  isStreaming = false,
+  showActions = false,
+  ragActive,
+  contextChunksUsed,
+  courseAvailable = false,
+  courseTemplate = "default",
+  onOpenCourse,
+}: ChatMessageProps) => {
   const [animatedContent, setAnimatedContent] = useState(content);
 
   useEffect(() => {
@@ -224,6 +237,33 @@ const ChatMessage = ({ content, isUser, isStreaming = false, showActions = false
           </>
         )}
       </div>
+      {courseAvailable && !isStreaming && (
+        <div className="mt-3 max-w-xl rounded-2xl border border-zinc-700/70 bg-zinc-900/70 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="h-10 w-10 shrink-0 rounded-lg border border-zinc-700 bg-zinc-950/80 flex items-center justify-center text-zinc-400 text-xs">
+                {"</>"}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-zinc-100">
+                  {courseTemplate === "sonos_typo"
+                    ? "SonosTypoCourse"
+                    : courseTemplate === "pixel_brutalist"
+                    ? "PixelBrutalistCourse"
+                    : "TeachCanvasKitCourse"}
+                </div>
+                <div className="text-xs text-zinc-400">Course Template • TSX</div>
+              </div>
+            </div>
+            <button
+              onClick={onOpenCourse}
+              className="shrink-0 rounded-xl border border-zinc-600 bg-zinc-900 px-4 py-2 text-sm font-semibold text-zinc-100 hover:bg-zinc-800 transition-colors"
+            >
+              Open Course
+            </button>
+          </div>
+        </div>
+      )}
       {showActions && !isStreaming && (
         <div className="flex items-center gap-0.5 mt-2">
           <button className="p-1.5 rounded-md hover:bg-zinc-800/50 transition-colors">

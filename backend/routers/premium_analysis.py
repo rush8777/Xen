@@ -27,6 +27,8 @@ class PremiumAnalysisResponse(BaseModel):
     pass_1_output: str
     pass_2_output: str
     pass_3_output: str
+    pass_4_output: str
+    pass_5_output: str
     generated_at: str | None
     version: int
     status: str
@@ -136,6 +138,8 @@ def get_premium_analysis(
         pass_1_output=analysis.pass_1_output or "",
         pass_2_output=analysis.pass_2_output or "",
         pass_3_output=analysis.pass_3_output or "",
+        pass_4_output=analysis.pass_4_output or "",
+        pass_5_output=analysis.pass_5_output or "",
         generated_at=analysis.generated_at.isoformat() if analysis.generated_at else None,
         version=analysis.version,
         status=analysis.status,

@@ -50,7 +50,7 @@ CONTENT_KEYWORDS: dict[str, list[str]] = {
 class RetrievedInterval:
     """A single retrieved interval with its similarity score and metadata."""
 
-    source: str  # "sub_interval" | "premium_structural" | "premium_psychological" | "premium_performance"
+    source: str  # "sub_interval" | "premium_structural" | "premium_psychological" | "premium_performance" | "premium_transcript" | "premium_verification"
     interval_id: int
     video_id: int
     start_time_seconds: int
@@ -191,12 +191,19 @@ class VectorRetrievalService:
         back to returning the first N intervals as context.
         """
         from ..models import (
+            AnalysisEmbedding,
+            AnalysisInterval,
+            AnalysisRecord,
             PremiumPerformanceInterval,
             PremiumPerformanceIntervalEmbedding,
             PremiumPsychologicalInterval,
             PremiumPsychologicalIntervalEmbedding,
             PremiumStructuralInterval,
             PremiumStructuralIntervalEmbedding,
+            PremiumTranscriptInterval,
+            PremiumTranscriptIntervalEmbedding,
+            PremiumVerificationInterval,
+            PremiumVerificationIntervalEmbedding,
             Project,
             SubVideoIntervalEmbedding,
             VideoSubInterval,
@@ -219,6 +226,20 @@ class VectorRetrievalService:
             if content_filter
             else similarity_threshold
         )
+
+        unified_results = self._search_unified_analysis_records(
+            db=db,
+            project_id=project_id,
+            query_embedding=query_embedding,
+            query_text=query_text,
+            similarity_threshold=effective_threshold,
+            content_filter=content_filter,
+            analysis_interval_model=AnalysisInterval,
+            analysis_record_model=AnalysisRecord,
+            analysis_embedding_model=AnalysisEmbedding,
+        )
+        if unified_results:
+            return self._sort_deduplicate_limit(unified_results, limit=limit)
 
         # ------------------------------------------------------------------
         # Search VideoSubInterval table
@@ -310,6 +331,18 @@ class VectorRetrievalService:
                 PremiumPerformanceIntervalEmbedding,
                 PremiumPerformanceIntervalEmbedding.performance_interval_id,
             ),
+            (
+                "premium_transcript",
+                PremiumTranscriptInterval,
+                PremiumTranscriptIntervalEmbedding,
+                PremiumTranscriptIntervalEmbedding.transcript_interval_id,
+            ),
+            (
+                "premium_verification",
+                PremiumVerificationInterval,
+                PremiumVerificationIntervalEmbedding,
+                PremiumVerificationIntervalEmbedding.verification_interval_id,
+            ),
         ]
 
         for source_name, interval_model, emb_model, emb_fk in premium_sources:
@@ -354,17 +387,118 @@ class VectorRetrievalService:
         # ------------------------------------------------------------------
         # Sort, de-duplicate by time window, apply limit
         # ------------------------------------------------------------------
-        results.sort(key=lambda r: r.similarity, reverse=True)
-        seen_windows: set[tuple[int, int]] = set()
+        return self._sort_deduplicate_limit(results, limit=limit)
+
+    def _search_unified_analysis_records(
+        self,
+        *,
+        db: Session,
+        project_id: int,
+        query_embedding: Optional[list[float]],
+        query_text: str,
+        similarity_threshold: float,
+        content_filter: Optional[str],
+        analysis_interval_model: Any,
+        analysis_record_model: Any,
+        analysis_embedding_model: Any,
+    ) -> list[RetrievedInterval]:
+        rows = (
+            db.query(analysis_interval_model, analysis_record_model, analysis_embedding_model)
+            .join(
+                analysis_record_model,
+                analysis_record_model.interval_id == analysis_interval_model.id,
+            )
+            .outerjoin(
+                analysis_embedding_model,
+                analysis_embedding_model.analysis_record_id == analysis_record_model.id,
+            )
+            .filter(
+                analysis_interval_model.project_id == project_id,
+                analysis_record_model.status == "completed",
+            )
+            .all()
+        )
+        if not rows:
+            return []
+
+        results: list[RetrievedInterval] = []
+        for interval_row, record_row, embedding_row in rows:
+            summary_text = (record_row.summary_text or "").strip()
+            payload_raw = record_row.payload_json
+            payload: dict[str, Any] = {}
+            if payload_raw:
+                try:
+                    parsed_payload = json.loads(payload_raw)
+                    if isinstance(parsed_payload, dict):
+                        payload = parsed_payload
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    payload = {}
+
+            searchable_text = "\n".join(
+                part for part in [summary_text, json.dumps(payload) if payload else ""] if part
+            ).lower()
+            if content_filter:
+                terms = CONTENT_KEYWORDS.get(content_filter, [])
+                if terms and not any(term in searchable_text for term in terms):
+                    continue
+
+            embedding = _parse_embedding(embedding_row.embedding if embedding_row else None)
+            if query_embedding and embedding:
+                similarity = _cosine_similarity(query_embedding, embedding)
+                if similarity < similarity_threshold:
+                    continue
+            elif query_embedding is None:
+                similarity = 0.5
+            else:
+                similarity = 0.0
+
+            analysis_type = (record_row.analysis_type or "analysis").strip() or "analysis"
+            result = RetrievedInterval(
+                source=analysis_type,
+                interval_id=interval_row.id,
+                video_id=interval_row.video_id,
+                start_time_seconds=interval_row.start_time_seconds,
+                end_time_seconds=interval_row.end_time_seconds,
+                similarity=similarity,
+                premium_combined_text=summary_text or None,
+            )
+            if analysis_type == "vision_raw":
+                result.camera_frame = payload.get("camera_frame")
+                result.environment_background = payload.get("environment_background")
+                result.people_figures = payload.get("people_figures")
+                result.objects_props = payload.get("objects_props")
+                result.text_symbols = payload.get("text_symbols")
+                result.motion_changes = payload.get("motion_changes")
+                result.lighting_color = payload.get("lighting_color")
+                result.audio_visible_indicators = payload.get("audio_visible_indicators")
+                result.occlusions_limits = payload.get("occlusions_limits")
+                result.raw_combined_text = payload.get("raw_combined_text") or summary_text
+            results.append(result)
+
+        if not results and query_text:
+            logger.debug(
+                "[VectorRetrieval] Unified schema had rows but no matches for project %s.",
+                project_id,
+            )
+        return results
+
+    def _sort_deduplicate_limit(
+        self,
+        rows: list[RetrievedInterval],
+        *,
+        limit: int,
+    ) -> list[RetrievedInterval]:
+        rows.sort(key=lambda r: r.similarity, reverse=True)
+        seen_keys: set[tuple[str, int, int]] = set()
         deduplicated: list[RetrievedInterval] = []
-        for r in results:
-            window = (r.start_time_seconds, r.end_time_seconds)
-            if window not in seen_windows:
-                seen_windows.add(window)
-                deduplicated.append(r)
+        for r in rows:
+            key = (r.source, r.start_time_seconds, r.end_time_seconds)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduplicated.append(r)
             if len(deduplicated) >= limit:
                 break
-
         return deduplicated
 
     # ------------------------------------------------------------------
@@ -425,7 +559,7 @@ class VectorRetrievalService:
 
             lines: list[str] = [header]
 
-            if r.source == "sub_interval":
+            if r.source in {"sub_interval", "vision_raw"}:
                 filter_map = {
                     "motion": [("Motion", r.motion_changes)],
                     "camera": [("Camera", r.camera_frame)],
@@ -468,9 +602,13 @@ class VectorRetrievalService:
                     )
             elif r.premium_combined_text:
                 source_label = {
+                    "vision_raw": "Visual interval",
+                    "vector_interval_summary": "Interval summary",
                     "premium_structural": "Premium structural",
                     "premium_psychological": "Premium psychological",
                     "premium_performance": "Premium performance",
+                    "premium_transcript": "Premium transcript",
+                    "premium_verification": "Premium verification",
                 }.get(r.source, "Premium")
                 lines.append(f"  Source: {source_label}")
                 lines.append(

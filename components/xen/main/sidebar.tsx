@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
+import React, { useState, useEffect, useCallback, useMemo } from "react"
 
 import {
   LayoutDashboard,
@@ -23,22 +23,21 @@ import { useSidebarContext } from "./layout"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 
-interface ApiProject {
+interface ApiRecentChat {
   id: number
+  project_id: number
+  project_name: string
+  project_category?: string | null
   name: string
-  category?: string | null
-  description?: string | null
-  video_url?: string | null
-  priority?: string | null
-  progress: number
-  status: string
-  created_at: string
+  platform?: string | null
   updated_at: string
+  last_message_at?: string | null
 }
 
 interface RecentChat {
   id: string
-  name: string
+  heading: string
+  projectName: string
   platform: string
   updatedAt: string
 }
@@ -75,41 +74,53 @@ export default function Sidebar() {
     return category || "Youtube"
   }, [])
 
-  const loadRecentProjects = useCallback(async () => {
+  const loadRecentChats = useCallback(async () => {
     try {
       setIsLoading(true)
-      const res = await fetch(`${API_BASE_URL}/api/projects?limit=5`, {
+      const res = await fetch(`${API_BASE_URL}/api/recent-chats?limit=8`, {
         cache: "no-store",
       })
       if (!res.ok) {
-        console.error("Failed to load recent projects:", res.status, res.statusText)
+        console.error("Failed to load recent chats:", res.status, res.statusText)
         setRecentChats([])
         return
       }
-      const data = (await res.json()) as ApiProject[]
-      const mapped: RecentChat[] = (data || []).map((p) => ({
-        id: String(p.id),
-        name: p.name,
-        platform: normalizeCategory(p.category),
-        updatedAt: formatTimeAgo(p.updated_at),
+      const data = (await res.json()) as ApiRecentChat[]
+      const mapped: RecentChat[] = (data || []).map((c) => ({
+        id: String(c.id),
+        heading: c.name,
+        projectName: c.project_name,
+        platform: normalizeCategory(c.project_category),
+        updatedAt: formatTimeAgo(c.last_message_at || c.updated_at),
       }))
       setRecentChats(mapped)
     } catch (e) {
-      console.error("Failed to load recent projects:", e)
+      console.error("Failed to load recent chats:", e)
       setRecentChats([])
     } finally {
       setIsLoading(false)
     }
   }, [formatTimeAgo, normalizeCategory])
 
-  useEffect(() => {
-    loadRecentProjects()
-  }, [loadRecentProjects])
+  const filteredRecentChats = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return recentChats
+    return recentChats.filter(
+      (c) =>
+        c.heading.toLowerCase().includes(query) ||
+        c.projectName.toLowerCase().includes(query) ||
+        c.platform.toLowerCase().includes(query)
+    )
+  }, [recentChats, searchQuery])
 
   useEffect(() => {
-    const onFocus = () => loadRecentProjects()
+    loadRecentChats()
+  }, [loadRecentChats])
+
+  useEffect(() => {
+    const onFocus = () => loadRecentChats()
     const onVisibility = () => {
-      if (document.visibilityState === "visible") loadRecentProjects()
+      if (document.visibilityState === "visible") loadRecentChats()
     }
     window.addEventListener("focus", onFocus)
     document.addEventListener("visibilitychange", onVisibility)
@@ -117,7 +128,7 @@ export default function Sidebar() {
       window.removeEventListener("focus", onFocus)
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [loadRecentProjects])
+  }, [loadRecentChats])
 
   function NavItem({
     href,
@@ -157,21 +168,23 @@ export default function Sidebar() {
   function RecentChatItem({ chat }: { chat: typeof recentChats[0] }) {
     return (
       <Link
-        href={`/chat/${chat.id}`}
+        href={`/chat?chatId=${encodeURIComponent(chat.id)}`}
         className={`group flex items-center gap-2 rounded-lg transition-all duration-200 ${
           isSidebarExpanded 
             ? "px-2 py-1.5 hover:bg-white/5" 
             : "px-2 py-1.5 justify-center hover:bg-white/5"
         }`}
-        title={chat.name}
+        title={chat.heading}
       >
         <div className="h-1 w-1 rounded-full bg-zinc-600 flex-shrink-0" />
         {isSidebarExpanded && (
           <div className="flex-1 min-w-0">
             <p className="text-xs text-zinc-400 group-hover:text-white truncate transition-colors">
-              {chat.name}
+              {chat.heading}
             </p>
-            <p className="text-[10px] text-zinc-600 mt-0.5">{chat.updatedAt}</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5 truncate">
+              {chat.projectName} • {chat.updatedAt}
+            </p>
           </div>
         )}
       </Link>
@@ -297,13 +310,13 @@ export default function Sidebar() {
                       </div>
                     ))}
                   </>
-                ) : recentChats.length > 0 ? (
-                  recentChats.map((chat) => (
+                ) : filteredRecentChats.length > 0 ? (
+                  filteredRecentChats.map((chat) => (
                     <RecentChatItem key={chat.id} chat={chat} />
                   ))
                 ) : (
                   isSidebarExpanded && (
-                    <p className="px-2 py-1 text-[10px] text-zinc-600">No recent projects</p>
+                    <p className="px-2 py-1 text-[10px] text-zinc-600">No recent chats</p>
                   )
                 )}
               </div>

@@ -61,6 +61,14 @@ type DashboardProject = {
   column: string
 }
 
+type RecentChatItem = {
+  id: string
+  heading: string
+  projectName: string
+  category: string
+  updatedAt: string
+}
+
 const getPriorityColor = (priority: string) => {
   switch (priority) {
     case "Video":
@@ -92,6 +100,7 @@ export default function CoursePage() {
   const [selectedContentType, setSelectedContentType] = useState<string | null>(null)
   const filterRef = useRef<HTMLDivElement>(null)
   const [projects, setProjects] = useState<DashboardProject[]>([])
+  const [recentChats, setRecentChats] = useState<RecentChatItem[]>([])
   const { setLoading, setStep, setLoadingStates } = useGlobalLoader()
 
   const handleInitializingChange = useCallback(
@@ -216,14 +225,62 @@ export default function CoursePage() {
     }
   }, [mapColumn, mapProgressColor, normalizeCategory, getThumbnailUrl])
 
-  useEffect(() => {
-    loadProjects()
-  }, [loadProjects])
+  const formatTimeAgo = useCallback((dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffHours / 24)
+    if (diffDays > 0) return `${diffDays}d ago`
+    if (diffHours > 0) return `${diffHours}h ago`
+    return "Just now"
+  }, [])
+
+  const loadRecentChats = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/recent-chats?limit=8`, {
+        cache: "no-store",
+      })
+      if (!res.ok) {
+        setRecentChats([])
+        return
+      }
+      const rows = (await res.json()) as Array<{
+        id: number
+        name: string
+        project_name: string
+        project_category?: string | null
+        updated_at: string
+        last_message_at?: string | null
+      }>
+      const mapped: RecentChatItem[] = (rows || []).map((r) => ({
+        id: String(r.id),
+        heading: r.name,
+        projectName: r.project_name,
+        category: normalizeCategory(r.project_category),
+        updatedAt: formatTimeAgo(r.last_message_at || r.updated_at),
+      }))
+      setRecentChats(mapped)
+    } catch {
+      setRecentChats([])
+    }
+  }, [formatTimeAgo, normalizeCategory])
 
   useEffect(() => {
-    const onFocus = () => loadProjects()
+    loadProjects()
+    loadRecentChats()
+  }, [loadProjects, loadRecentChats])
+
+  useEffect(() => {
+    const onFocus = () => {
+      loadProjects()
+      loadRecentChats()
+    }
     const onVisibility = () => {
-      if (document.visibilityState === "visible") loadProjects()
+      if (document.visibilityState === "visible") {
+        loadProjects()
+        loadRecentChats()
+      }
     }
     window.addEventListener("focus", onFocus)
     document.addEventListener("visibilitychange", onVisibility)
@@ -231,7 +288,7 @@ export default function CoursePage() {
       window.removeEventListener("focus", onFocus)
       document.removeEventListener("visibilitychange", onVisibility)
     }
-  }, [loadProjects])
+  }, [loadProjects, loadRecentChats])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -316,7 +373,7 @@ const platformIcons: Record<string, React.FC<{ className?: string }>> = {
 }
 
 // ChatRow component
-function ChatRow({ project, index }: { project: any; index: number }) {
+function ChatRow({ chat, index }: { chat: RecentChatItem; index: number }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -330,7 +387,7 @@ function ChatRow({ project, index }: { project: any; index: number }) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const PlatformIcon = platformIcons[project.category] || (() => <div className="w-4 h-4 rounded-full bg-gray-500 flex-shrink-0" />)
+  const PlatformIcon = platformIcons[chat.category] || (() => <div className="w-4 h-4 rounded-full bg-gray-500 flex-shrink-0" />)
 
   return (
     <div className="group hover:bg-gray-50 dark:hover:bg-[#2F2F37]/50 transition-colors">
@@ -338,7 +395,7 @@ function ChatRow({ project, index }: { project: any; index: number }) {
         {/* Left - Chat Info */}
         <div className="w-48 min-w-0">
           <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-            {project.title.replace(/\.\.$/, '')}
+            {chat.heading.replace(/\.\.$/, '')}
           </h3>
         </div>
 
@@ -346,7 +403,7 @@ function ChatRow({ project, index }: { project: any; index: number }) {
         <div className="flex-1 flex justify-center items-center gap-2 flex-shrink-0">
           <PlatformIcon />
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-            Project #{project.id}
+            {chat.projectName}
           </span>
         </div>
 
@@ -354,7 +411,7 @@ function ChatRow({ project, index }: { project: any; index: number }) {
         <div className="flex items-center gap-3 flex-shrink-0 w-48 justify-end">
           {/* Time */}
           <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-            {index === 0 ? "20h ago" : index === 1 ? "5d ago" : "29d ago"}
+            {chat.updatedAt}
           </span>
 
           {/* Status Dot */}
@@ -633,9 +690,15 @@ function ChatRow({ project, index }: { project: any; index: number }) {
 
         <div className="flex justify-center">
           <div className="w-full max-w-4xl">
-            {filteredTasks.slice(0, 5).map((project, index) => (
-              <ChatRow key={project.id} project={project} index={index} />
-            ))}
+            {recentChats.length > 0 ? (
+              recentChats.slice(0, 5).map((chat, index) => (
+                <ChatRow key={chat.id} chat={chat} index={index} />
+              ))
+            ) : (
+              <div className="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">
+                No chats yet
+              </div>
+            )}
           </div>
         </div>
       </div>

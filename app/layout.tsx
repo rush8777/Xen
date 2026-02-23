@@ -1,6 +1,8 @@
 import { Inter } from "next/font/google"
 import "./globals.css"
+import "@/components/teach-canvas-kit-component/styles.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { ScrollbarVisibilityManager } from "@/components/scrollbar-visibility-manager"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -18,6 +20,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
+        <ScrollbarVisibilityManager />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
         </ThemeProvider>
