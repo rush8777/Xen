@@ -5,17 +5,37 @@ import { Paperclip, Globe, Lightbulb, MoreHorizontal, ArrowUp } from "lucide-rea
 import { useProjects } from './useProjects';
 
 interface ChatInputProps {
-  onSend: (message: string, mentionedProject?: string) => void;
+  onSend: (
+    message: string,
+    mentionedProject?: string,
+    clarificationAnswers?: Record<string, string>,
+    courseModeEnabled?: boolean
+  ) => void;
+  courseModeEnabled?: boolean;
+  onToggleCourseMode?: () => void;
 }
 
-const ChatInput = ({ onSend }: ChatInputProps) => {
+const ChatInput = ({ onSend, courseModeEnabled, onToggleCourseMode }: ChatInputProps) => {
   const [message, setMessage] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [mentionText, setMentionText] = useState("");
   const [filteredProjects, setFilteredProjects] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [internalCourseModeEnabled, setInternalCourseModeEnabled] = useState(false);
   const { projects, loading } = useProjects();
   const inputRef = useRef<HTMLInputElement>(null);
+  const effectiveCourseModeEnabled =
+    typeof courseModeEnabled === "boolean"
+      ? courseModeEnabled
+      : internalCourseModeEnabled;
+
+  const handleToggleCourseMode = () => {
+    if (onToggleCourseMode) {
+      onToggleCourseMode();
+      return;
+    }
+    setInternalCourseModeEnabled((prev) => !prev);
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -87,7 +107,7 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
         mentionedProject = lastMention?.[1];
       }
 
-      onSend(message, mentionedProject);
+      onSend(message, mentionedProject, undefined, effectiveCourseModeEnabled);
       setMessage("");
     }
   };
@@ -139,10 +159,15 @@ const ChatInput = ({ onSend }: ChatInputProps) => {
             </button>
             <button
               type="button"
-              className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-zinc-800/50 hover:bg-zinc-800 transition-colors"
+              onClick={handleToggleCourseMode}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-colors ${
+                effectiveCourseModeEnabled
+                  ? "bg-emerald-700/80 text-emerald-100 hover:bg-emerald-700"
+                  : "bg-zinc-800/50 hover:bg-zinc-800"
+              }`}
             >
               <Lightbulb className="w-3.5 h-3.5 text-zinc-400" />
-              <span className="text-xs text-zinc-400">Reason</span>
+              <span className="text-xs">Course Mode</span>
             </button>
             <button
               type="button"

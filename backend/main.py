@@ -18,6 +18,7 @@ from .routers import oauth, connections, videos, analysis, projects, chats
 from .routers import project_statistics
 from .routers import project_overview
 from .routers import premium_analysis
+from .routers import project_content_features
 
 
 
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(project_overview.router)
 
     app.include_router(premium_analysis.router)
+    app.include_router(project_content_features.router)
 
     app.include_router(chats.router)
 

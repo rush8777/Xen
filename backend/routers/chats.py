@@ -65,9 +65,11 @@ class RecentChatDTO(BaseModel):
 
 class ChatSendMessageRequest(BaseModel):
     chat_id: int | None = None
+    project_id: int | None = None
     message: str
     user_id: int | None = None
     course_clarification_answers: dict[str, str] | None = None
+    course_mode_enabled: bool = False
 
 
 class ProjectRef(BaseModel):
@@ -93,6 +95,78 @@ class ChatSessionResponse(BaseModel):
 _MENTION_RE = re.compile(r"@([^\n@]+)")
 _COURSE_PAYLOAD_PREFIX = "[[COURSE_PAYLOAD_V1:"
 _COURSE_PAYLOAD_SUFFIX = "]]"
+_COURSE_TRIGGER_TERMS = (
+    "course",
+    "curriculum",
+    "lesson",
+    "lessons",
+    "training plan",
+    "learning path",
+    "study plan",
+    "slide deck",
+    "slides",
+    "module",
+    "modules",
+    "teach me",
+    "tutorial",
+    "coaching plan",
+)
+_SMALLTALK_RE = re.compile(
+    r"^\s*(hi|hello|hey|yo|sup|hola|good morning|good afternoon|good evening|thanks|thank you)\b[!.? ]*$",
+    re.IGNORECASE,
+)
+
+
+def _contains_course_trigger(user_message: str) -> bool:
+    text = (user_message or "").strip().lower()
+    if not text:
+        return False
+    return any(term in text for term in _COURSE_TRIGGER_TERMS)
+
+
+def _should_generate_course(
+    *,
+    user_message: str,
+    intent: dict,
+    provided_clarification_answers: dict[str, str],
+    course_mode_enabled: bool,
+) -> bool:
+    """
+    Gate course generation to explicit learning/course requests.
+    This prevents normal chat (greetings, quick questions) from
+    being routed into the course pipeline.
+    """
+    # Hard gate: if the user did not enable course mode, always use text chat.
+    if not course_mode_enabled:
+        return False
+
+    if provided_clarification_answers:
+        return True
+
+    text = (user_message or "").strip()
+    if not text:
+        return False
+
+    if _SMALLTALK_RE.match(text):
+        return False
+
+    is_course_request = bool(intent.get("is_course_request"))
+    try:
+        confidence = float(intent.get("confidence", 0.0))
+    except Exception:
+        confidence = 0.0
+
+    has_explicit_trigger = _contains_course_trigger(text)
+
+    # Strong explicit request: allow with moderate confidence.
+    if has_explicit_trigger and is_course_request and confidence >= 0.45:
+        return True
+
+    # Very high confidence model decision can trigger even without keywords.
+    if is_course_request and confidence >= 0.85:
+        return True
+
+    return False
 
 
 def _build_stored_assistant_content(
@@ -194,26 +268,37 @@ def _resolve_project_by_name(*, db: Session, project_name: str, user_id: int | N
 
 
 def _resolve_default_project_for_new_chat(*, db: Session, user_id: int | None) -> Project | None:
-    query = db.query(Project).join(Chat, Chat.project_id == Project.id)
+    query = db.query(Project)
     if user_id is not None:
         query = query.filter(Project.user_id == user_id)
-    return query.order_by(Chat.updated_at.desc()).first()
+    return query.order_by(Project.updated_at.desc(), Project.created_at.desc()).first()
 
 
 def _resolve_project_for_message(
     *,
     db: Session,
     chat: Chat | None,
+    project_id: int | None,
     message: str,
     user_id: int | None,
 ) -> Project:
     """
     Resolve target project for the current message.
     Priority:
-      1) Latest @mention in message.
-      2) Existing chat.project_id (if chat provided).
-      3) Most recently updated project with a chat.
+      1) Explicit project_id in request payload.
+      2) Latest @mention in message.
+      3) Existing chat.project_id (if chat provided).
+      4) Most recently updated project.
     """
+    if project_id is not None:
+        project_query = db.query(Project).filter(Project.id == project_id)
+        if user_id is not None:
+            project_query = project_query.filter(Project.user_id == user_id)
+        project = project_query.first()
+        if project:
+            return project
+        raise HTTPException(status_code=404, detail="Project not found")
+
     project_name = _extract_project_name_from_message(message)
     if project_name:
         return _resolve_project_by_name(
@@ -429,6 +514,7 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
         project = _resolve_project_for_message(
             db=db,
             chat=chat,
+            project_id=payload.project_id,
             message=message,
             user_id=payload.user_id,
         )
@@ -440,6 +526,7 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
         project = _resolve_project_for_message(
             db=db,
             chat=None,
+            project_id=payload.project_id,
             message=message,
             user_id=payload.user_id,
         )
@@ -486,8 +573,11 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
             messages=history,
             user_message=message,
         )
-        should_generate_course = bool(provided_clarification_answers) or (
-            bool(intent.get("is_course_request")) and float(intent.get("confidence", 0.0)) >= 0.45
+        should_generate_course = _should_generate_course(
+            user_message=message,
+            intent=intent,
+            provided_clarification_answers=provided_clarification_answers,
+            course_mode_enabled=bool(payload.course_mode_enabled),
         )
 
         if should_generate_course:
@@ -629,6 +719,7 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
         project = _resolve_project_for_message(
             db=db,
             chat=chat,
+            project_id=payload.project_id,
             message=message,
             user_id=payload.user_id,
         )
@@ -640,6 +731,7 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
         project = _resolve_project_for_message(
             db=db,
             chat=None,
+            project_id=payload.project_id,
             message=message,
             user_id=payload.user_id,
         )
@@ -691,8 +783,11 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
                     user_message=message,
                 )
             )
-            should_generate_course = bool(provided_clarification_answers) or (
-                bool(intent.get("is_course_request")) and float(intent.get("confidence", 0.0)) >= 0.45
+            should_generate_course = _should_generate_course(
+                user_message=message,
+                intent=intent,
+                provided_clarification_answers=provided_clarification_answers,
+                course_mode_enabled=bool(payload.course_mode_enabled),
             )
 
             if should_generate_course:

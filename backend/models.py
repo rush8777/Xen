@@ -270,6 +270,58 @@ class ProjectStatistics(Base):
     project = relationship("Project")
 
 
+class ProjectContentFeatures(Base):
+    __tablename__ = "project_content_features"
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_project_content_features_project"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
+
+    status = Column(String(20), nullable=False, default="not_started")
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+
+    clips_status = Column(String(20), nullable=False, default="not_started")
+    clips_progress = Column(Integer, nullable=False, default=0)
+    clips_json = Column(Text, nullable=False, default="{}")
+    clips_error = Column(Text, nullable=True)
+
+    subtitles_status = Column(String(20), nullable=False, default="not_started")
+    subtitles_progress = Column(Integer, nullable=False, default=0)
+    subtitles_json = Column(Text, nullable=False, default="{}")
+    subtitles_error = Column(Text, nullable=True)
+
+    chapters_status = Column(String(20), nullable=False, default="not_started")
+    chapters_progress = Column(Integer, nullable=False, default=0)
+    chapters_json = Column(Text, nullable=False, default="{}")
+    chapters_error = Column(Text, nullable=True)
+
+    moments_status = Column(String(20), nullable=False, default="not_started")
+    moments_progress = Column(Integer, nullable=False, default=0)
+    moments_json = Column(Text, nullable=False, default="{}")
+    moments_error = Column(Text, nullable=True)
+
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+
+
 class GeminiCache(Base):
     __tablename__ = "gemini_caches"
     __table_args__ = (

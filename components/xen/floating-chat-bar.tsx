@@ -6,12 +6,15 @@ import { cn } from "@/lib/utils"
 
 interface FloatingVideoChatProps {
   initialMessages?: any[]
+  projectId?: string | number | null
 }
 
 export default function FloatingVideoChat({
   initialMessages = [],
+  projectId = null,
 }: FloatingVideoChatProps) {
   const router = useRouter()
+  const chatHref = projectId ? `/chat?projectId=${encodeURIComponent(String(projectId))}` : "/chat"
 
   return (
     <div className="fixed bottom-0 left-0 right-0 flex flex-col items-center pointer-events-none z-[60]">
@@ -23,12 +26,12 @@ export default function FloatingVideoChat({
             readOnly
             placeholder="Ask a question..."
             onClick={() => {
-              router.push('/chat')
+              router.push(chatHref)
             }}
             className="flex-1 bg-transparent text-white placeholder-zinc-500 outline-none text-sm cursor-pointer"
           />
           <button
-            onClick={() => router.push('/chat')}
+            onClick={() => router.push(chatHref)}
             className="p-2 rounded-full transition-colors bg-zinc-800/50 text-zinc-600 hover:bg-purple-600 hover:text-white"
           >
             <ArrowUp className="w-4 h-4" />

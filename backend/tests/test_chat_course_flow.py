@@ -116,7 +116,7 @@ def test_default_project_resolution_global_when_user_null():
         assert resolved.id == p2.id
 
 
-def test_first_message_without_mention_and_no_chats_returns_400():
+def test_first_message_without_mention_uses_latest_project():
     client, SessionLocal = _build_client()
     with SessionLocal() as db:
         _seed_user_project(db, user_id=1, project_name="No Chat Yet")
@@ -125,8 +125,68 @@ def test_first_message_without_mention_and_no_chats_returns_400():
         "/api/chats/send-message",
         json={"chat_id": None, "message": "Please help me improve this", "user_id": 1},
     )
-    assert response.status_code == 400
-    assert "No project specified and no recent project found" in response.json()["detail"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["project"]["name"] == "No Chat Yet"
+
+
+def test_project_id_in_payload_forces_target_project():
+    client, SessionLocal = _build_client()
+    with SessionLocal() as db:
+        _seed_user_project(db, user_id=1, project_name="Project A")
+        _, project_b = _seed_user_project(db, user_id=1, project_name="Project B")
+
+    response = client.post(
+        "/api/chats/send-message",
+        json={
+            "chat_id": None,
+            "project_id": project_b.id,
+            "message": "Analyze this video",
+            "user_id": 1,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["project"]["id"] == project_b.id
+    assert body["project"]["name"] == "Project B"
+
+
+def test_course_gate_blocks_smalltalk_even_if_intent_true():
+    allowed = chats._should_generate_course(
+        user_message="hello",
+        intent={"is_course_request": True, "confidence": 0.99},
+        provided_clarification_answers={},
+        course_mode_enabled=True,
+    )
+    assert allowed is False
+
+
+def test_course_gate_requires_explicit_trigger_for_mid_confidence_intent():
+    blocked = chats._should_generate_course(
+        user_message="Can you analyze this video quickly?",
+        intent={"is_course_request": True, "confidence": 0.7},
+        provided_clarification_answers={},
+        course_mode_enabled=True,
+    )
+    assert blocked is False
+
+    allowed = chats._should_generate_course(
+        user_message="Create a short course for this video",
+        intent={"is_course_request": True, "confidence": 0.7},
+        provided_clarification_answers={},
+        course_mode_enabled=True,
+    )
+    assert allowed is True
+
+
+def test_course_gate_blocks_even_explicit_course_request_when_mode_off():
+    blocked = chats._should_generate_course(
+        user_message="Create a short course for this video",
+        intent={"is_course_request": True, "confidence": 0.99},
+        provided_clarification_answers={"goal": "Retention"},
+        course_mode_enabled=False,
+    )
+    assert blocked is False
 
 
 def test_course_intent_true_returns_course_payload(monkeypatch):

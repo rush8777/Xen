@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Iterator, Optional
 
 from google.genai import types
@@ -62,6 +63,135 @@ class RagChatService:
 
     def __init__(self) -> None:
         self._retrieval = VectorRetrievalService()
+
+    async def _resolve_cached_video_state_async(
+        self,
+        *,
+        project: Project,
+    ) -> tuple[bool, Optional[datetime]]:
+        """
+        Decide whether Gemini cached video should be used for this request.
+
+        Returns:
+            (use_cached_video, expires_at_utc)
+        """
+        cached_content_name = (project.gemini_cached_content_name or "").strip()
+        if not cached_content_name:
+            return False, None
+
+        loop = asyncio.get_running_loop()
+        try:
+            cache_obj = await loop.run_in_executor(
+                None,
+                lambda: client.caches.get(name=cached_content_name),
+            )
+        except Exception as exc:
+            logger.info(
+                "[RAG] Cached video lookup failed for project %s (%s): %s",
+                project.id,
+                cached_content_name,
+                exc,
+            )
+            return False, None
+
+        expires_at = self._extract_cache_expiry(cache_obj)
+        if expires_at is None:
+            return True, None
+        return expires_at > datetime.now(timezone.utc), expires_at
+
+    def _extract_cache_expiry(self, cache_obj: Any) -> Optional[datetime]:
+        if cache_obj is None:
+            return None
+
+        for key in ("expire_time", "expires_at", "expireTime", "expiry_time"):
+            value = getattr(cache_obj, key, None)
+            dt_value = self._coerce_to_utc_datetime(value)
+            if dt_value is not None:
+                return dt_value
+
+        if hasattr(cache_obj, "to_dict"):
+            try:
+                payload = cache_obj.to_dict() or {}
+                for key in ("expire_time", "expires_at", "expireTime", "expiry_time"):
+                    dt_value = self._coerce_to_utc_datetime(payload.get(key))
+                    if dt_value is not None:
+                        return dt_value
+            except Exception:
+                pass
+
+        return None
+
+    def _coerce_to_utc_datetime(self, value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
+
+        if isinstance(value, dict):
+            try:
+                seconds = int(value.get("seconds"))
+                nanos = int(value.get("nanos", 0))
+                return datetime.fromtimestamp(
+                    seconds + (nanos / 1_000_000_000.0),
+                    tz=timezone.utc,
+                )
+            except Exception:
+                return None
+
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return None
+            if cleaned.endswith("Z"):
+                cleaned = cleaned[:-1] + "+00:00"
+            try:
+                parsed = datetime.fromisoformat(cleaned)
+            except Exception:
+                return None
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+
+        iso_fn = getattr(value, "isoformat", None)
+        if callable(iso_fn):
+            try:
+                return self._coerce_to_utc_datetime(iso_fn())
+            except Exception:
+                return None
+        return None
+
+    def _build_cached_video_system_prompt(
+        self,
+        *,
+        project: Project,
+        expires_at: Optional[datetime],
+    ) -> str:
+        expiry_line = (
+            f"Cached video expiry (UTC): {expires_at.isoformat()}"
+            if expires_at is not None
+            else "Cached video expiry (UTC): unknown"
+        )
+        return "\n".join(
+            [
+                "ROLE",
+                "You are a structured video performance analysis assistant embedded inside a SaaS video intelligence platform.",
+                f"Project name: {project.name}",
+                f"Project id: {project.id}",
+                "",
+                "CONTEXT RULES",
+                "Answer using the attached Gemini cached video content as the primary source of truth.",
+                "Ground conclusions in what is visible/audible in the video and explicitly acknowledge uncertainty when evidence is missing.",
+                "Do not invent metrics or claim observations that are not supported by the video.",
+                expiry_line,
+                "",
+                "OUTPUT RULES",
+                "- Be analytical, precise, and structured.",
+                "- If the user asks for optimization, provide practical, mechanical improvements.",
+                "- If a requested fact cannot be verified from video evidence, clearly say so.",
+            ]
+        )
 
     # ------------------------------------------------------------------
     # Retrieval (now async, with sync fallback for backward compat)
@@ -201,6 +331,41 @@ class RagChatService:
         Returns:
             (reply_text, rag_was_active, context_chunks_used, context_chunks)
         """
+        use_cached_video, cached_expires_at = await self._resolve_cached_video_state_async(
+            project=project
+        )
+        if use_cached_video:
+            contents = self._build_contents(messages=messages, user_message=user_message)
+            loop = asyncio.get_running_loop()
+            try:
+                resp = await loop.run_in_executor(
+                    None,
+                    lambda: client.models.generate_content(
+                        model=self.model,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            cached_content=project.gemini_cached_content_name,
+                            temperature=0.7,
+                            response_mime_type="text/plain",
+                        ),
+                    ),
+                )
+                text = (resp.text or "").strip()
+                if not text:
+                    raise ValueError("Empty response from Gemini cached video flow")
+                expiry_note = (
+                    f"Using Gemini cached video until {cached_expires_at.isoformat()} UTC."
+                    if cached_expires_at is not None
+                    else "Using Gemini cached video."
+                )
+                return text, True, 1, [expiry_note]
+            except Exception as exc:
+                logger.warning(
+                    "[RAG] Cached video generation failed for project %s, falling back to RAG: %s",
+                    project.id,
+                    exc,
+                )
+
         context_chunks, rag_active = await self.retrieve_project_context_async(
             project_id=project.id,
             query=user_message,
@@ -261,8 +426,10 @@ class RagChatService:
         detector_prompt = (
             "You are an intent classifier for a video-analysis chat assistant.\n"
             "Decide if the user is asking for a generated learning course/slides/training path.\n"
-            "Use broad detection: requests for coaching plan, improvement program, learning slides, "
-            "or guided lesson should usually be true.\n"
+            "Set is_course_request=true ONLY when the user explicitly asks for a course-like deliverable "
+            "(course, lessons, slides, curriculum, training plan, learning path, tutorial plan).\n"
+            "For normal Q&A, greetings, small talk, summarization, analysis questions, and generic advice, "
+            "set is_course_request=false.\n"
             "Return strict JSON only with keys:\n"
             "{\n"
             '  "is_course_request": boolean,\n'
@@ -333,6 +500,10 @@ class RagChatService:
         )
 
         context_blob = "\n\n".join(context_chunks) if context_chunks else ""
+        template = str((course_requirements or {}).get("course_template") or "default").strip().lower()
+        if template not in {"default", "sonos_typo", "pixel_brutalist"}:
+            template = "default"
+
         course_prompt = (
             "You are an expert video growth educator.\n"
             "Generate an actionable mini-course to improve the user's video performance.\n"
@@ -366,6 +537,45 @@ class RagChatService:
             "- Keep language practical and specific.\n"
             "- If project context is limited, still produce a useful course and mention data limitations in summary.\n"
         )
+        sonos_prompt = (
+            "You are designing a SonosTypoCourse native deck.\n"
+            "Return strict JSON only with keys:\n"
+            "{\n"
+            '  "course_summary": "string",\n'
+            '  "course_data": {\n'
+            '    "courseTitle": "string",\n'
+            '    "subtitle": "string",\n'
+            '    "slides": [\n'
+            "      {\n"
+            '        "type": "cover|statement|contents|overview|columns|cards|divider|highlights|checklist|quiz",\n'
+            '        "palette": "navy|maroon|powder|olive|peach|midnight|lilac|charcoal",\n'
+            '        "title": "string?",\n'
+            '        "subtitle": "string?",\n'
+            '        "buttonLabel": "string?",\n'
+            '        "bigWord": "string?",\n'
+            '        "leftText": "string?",\n'
+            '        "rightLabel": "string?",\n'
+            '        "rightText": "string?",\n'
+            '        "items": ["string"] | [{"text":"string","checked":boolean}]?,\n'
+            '        "paragraphs": ["string"]?,\n'
+            '        "body": "string?",\n'
+            '        "columns": [{"heading":"string","body":"string"}]?,\n'
+            '        "cards": [{"heading":"string","description":"string"}]?,\n'
+            '        "lines": ["string"]?,\n'
+            '        "quizQuestion": "string?",\n'
+            '        "quizOptions": ["string"]?,\n'
+            '        "correctAnswer": number?\n'
+            "      }\n"
+            "    ]\n"
+            "  }\n"
+            "}\n"
+            "Constraints:\n"
+            "- Generate 6 to 12 slides.\n"
+            "- Include at least 1 checklist and 1 quiz slide.\n"
+            "- Include at least 1 columns or cards slide with concrete tactics.\n"
+            "- Use Sonos-appropriate concise typography-first text blocks.\n"
+            "- Keep recommendations practical and tied to retention/hook/views/engagement.\n"
+        )
 
         recent_messages: list[dict[str, str]] = []
         for m in messages[-8:]:
@@ -381,6 +591,7 @@ class RagChatService:
             "recent_messages": recent_messages,
             "course_requirements": course_requirements or {},
             "retrieved_context": context_blob[:MAX_CONTEXT_CHARS],
+            "course_template": template,
         }
 
         loop = asyncio.get_running_loop()
@@ -390,7 +601,7 @@ class RagChatService:
                 model=self.model,
                 contents=[json.dumps(course_input, ensure_ascii=False)],
                 config=types.GenerateContentConfig(
-                    system_instruction=course_prompt,
+                    system_instruction=sonos_prompt if template == "sonos_typo" else course_prompt,
                     temperature=0.4,
                     response_mime_type="application/json",
                 ),
@@ -401,7 +612,10 @@ class RagChatService:
             raise ValueError("Failed to parse course JSON")
 
         course_summary = str(payload.get("course_summary") or "").strip()
-        course_data = self._sanitize_course_payload(payload.get("course_data"))
+        if template == "sonos_typo":
+            course_data = self._sanitize_sonos_course_payload(payload.get("course_data"))
+        else:
+            course_data = self._sanitize_course_payload(payload.get("course_data"))
         if not course_data:
             raise ValueError("Generated course payload failed validation")
 
@@ -636,6 +850,39 @@ class RagChatService:
         Returns:
             (token_iterator, rag_was_active, context_chunks_used, context_chunks)
         """
+        loop = asyncio.new_event_loop()
+        try:
+            use_cached_video, cached_expires_at = loop.run_until_complete(
+                self._resolve_cached_video_state_async(project=project)
+            )
+        finally:
+            loop.close()
+
+        if use_cached_video:
+            contents = self._build_contents(messages=messages, user_message=user_message)
+            expiry_note = (
+                f"Using Gemini cached video until {cached_expires_at.isoformat()} UTC."
+                if cached_expires_at is not None
+                else "Using Gemini cached video."
+            )
+
+            def _cached_token_iter() -> Iterator[str]:
+                stream = client.models.generate_content_stream(
+                    model=self.model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        cached_content=project.gemini_cached_content_name,
+                        temperature=0.7,
+                        response_mime_type="text/plain",
+                    ),
+                )
+                for chunk in stream:
+                    text = getattr(chunk, "text", None)
+                    if text is not None and text != "":
+                        yield text
+
+            return _cached_token_iter(), True, 1, [expiry_note]
+
         loop = asyncio.new_event_loop()
         try:
             context_chunks, rag_active = loop.run_until_complete(
@@ -1047,6 +1294,203 @@ class RagChatService:
             return None
 
         return {"courseTitle": course_title, "slides": slides}
+
+    def _sanitize_sonos_course_payload(self, raw: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(raw, dict):
+            return None
+
+        course_title = self._normalize_text(raw.get("courseTitle"), 120) or "Video Improvement Course"
+        subtitle = self._normalize_text(raw.get("subtitle"), 120)
+
+        raw_slides = raw.get("slides")
+        if not isinstance(raw_slides, list):
+            return None
+
+        allowed_types = {
+            "cover", "statement", "contents", "overview", "columns",
+            "cards", "divider", "highlights", "checklist", "quiz",
+        }
+        allowed_palettes = {"navy", "maroon", "powder", "olive", "peach", "midnight", "lilac", "charcoal"}
+
+        slides: list[dict[str, Any]] = []
+        has_checklist = False
+        has_quiz = False
+        has_structured_cards = False
+
+        type_aliases = {
+            "title": "cover",
+            "text-only": "overview",
+            "text-image": "overview",
+        }
+
+        for slide_raw in raw_slides[:MAX_COURSE_SLIDES]:
+            if not isinstance(slide_raw, dict):
+                continue
+            raw_type = self._normalize_text(slide_raw.get("type"), 40).lower()
+            slide_type = type_aliases.get(raw_type, raw_type)
+
+            # Coerce generic/ambiguous slides into Sonos-native types so the UI never
+            # gets a non-renderable slide.
+            if slide_type not in allowed_types:
+                if isinstance(slide_raw.get("quizOptions"), list):
+                    slide_type = "quiz"
+                elif isinstance(slide_raw.get("columns"), list):
+                    slide_type = "columns"
+                elif isinstance(slide_raw.get("cards"), list):
+                    slide_type = "cards"
+                elif isinstance(slide_raw.get("items"), list):
+                    has_check = False
+                    for item in slide_raw.get("items") or []:
+                        if isinstance(item, dict) and "checked" in item:
+                            has_check = True
+                            break
+                    slide_type = "checklist" if has_check else "contents"
+                elif self._normalize_text(slide_raw.get("bigWord"), 20):
+                    slide_type = "statement"
+                elif isinstance(slide_raw.get("lines"), list):
+                    slide_type = "highlights"
+                elif self._normalize_text(slide_raw.get("body"), 20):
+                    slide_type = "overview"
+                else:
+                    slide_type = "divider"
+
+            if slide_type not in allowed_types:
+                continue
+
+            slide: dict[str, Any] = {"type": slide_type}
+            palette = self._normalize_text(slide_raw.get("palette"), 30).lower()
+            if palette in allowed_palettes:
+                slide["palette"] = palette
+
+            # Shared text fields
+            for field, lim in (
+                ("title", 140), ("subtitle", 320), ("buttonLabel", 40),
+                ("bigWord", 120), ("leftText", 800), ("rightLabel", 80),
+                ("rightText", 800), ("body", 1200), ("quizQuestion", 260),
+            ):
+                value = self._normalize_text(slide_raw.get(field), lim)
+                if value:
+                    slide[field] = value
+
+            # paragraphs
+            paragraphs_raw = slide_raw.get("paragraphs")
+            if isinstance(paragraphs_raw, list):
+                paragraphs = [self._normalize_text(p, 500) for p in paragraphs_raw]
+                paragraphs = [p for p in paragraphs if p]
+                if paragraphs:
+                    slide["paragraphs"] = paragraphs[:6]
+
+            # items
+            items_raw = slide_raw.get("items")
+            if isinstance(items_raw, list):
+                if slide_type == "checklist":
+                    checklist_items: list[dict[str, Any]] = []
+                    for it in items_raw[:12]:
+                        if isinstance(it, dict):
+                            text = self._normalize_text(it.get("text"), 260)
+                            checked = bool(it.get("checked", False))
+                        else:
+                            text = self._normalize_text(it, 260)
+                            checked = False
+                        if not text:
+                            continue
+                        checklist_items.append({"text": text, "checked": checked})
+                    if checklist_items:
+                        slide["items"] = checklist_items
+                        has_checklist = True
+                else:
+                    strings = [self._normalize_text(it, 200) for it in items_raw]
+                    strings = [s for s in strings if s]
+                    if strings:
+                        slide["items"] = strings[:12]
+
+            # columns
+            columns_raw = slide_raw.get("columns")
+            if isinstance(columns_raw, list):
+                columns: list[dict[str, Any]] = []
+                for col in columns_raw[:6]:
+                    if not isinstance(col, dict):
+                        continue
+                    heading = self._normalize_text(col.get("heading"), 100)
+                    body = self._normalize_text(col.get("body"), 500)
+                    if heading or body:
+                        columns.append({"heading": heading or "Point", "body": body or "Details"})
+                if columns:
+                    slide["columns"] = columns
+                    has_structured_cards = True
+
+            # cards
+            cards_raw = slide_raw.get("cards")
+            if isinstance(cards_raw, list):
+                cards: list[dict[str, Any]] = []
+                for card in cards_raw[:8]:
+                    if not isinstance(card, dict):
+                        continue
+                    heading = self._normalize_text(card.get("heading"), 100)
+                    description = self._normalize_text(card.get("description"), 500)
+                    if heading or description:
+                        cards.append({
+                            "heading": heading or "Point",
+                            "description": description or "Details",
+                        })
+                if cards:
+                    slide["cards"] = cards
+                    has_structured_cards = True
+
+            # highlights lines
+            lines_raw = slide_raw.get("lines")
+            if isinstance(lines_raw, list):
+                lines = [self._normalize_text(line, 120) for line in lines_raw]
+                lines = [line for line in lines if line]
+                if lines:
+                    slide["lines"] = lines[:10]
+
+            # quiz
+            if slide_type == "quiz":
+                options_raw = slide_raw.get("quizOptions")
+                if isinstance(options_raw, list):
+                    options = [self._normalize_text(o, 180) for o in options_raw]
+                    options = [o for o in options if o]
+                    if len(options) >= 2:
+                        slide["quizOptions"] = options[:6]
+                        try:
+                            ca = int(slide_raw.get("correctAnswer", 0))
+                        except Exception:
+                            ca = 0
+                        if ca < 0 or ca >= len(slide["quizOptions"]):
+                            ca = 0
+                        slide["correctAnswer"] = ca
+                        has_quiz = True
+
+            # Minimal validity by type
+            if slide_type in {"cover", "overview", "divider"} and not slide.get("title"):
+                continue
+            if slide_type == "statement" and not (slide.get("bigWord") or slide.get("title")):
+                continue
+            if slide_type == "contents" and not slide.get("items"):
+                continue
+            if slide_type in {"columns", "cards"} and not (slide.get("columns") or slide.get("cards")):
+                continue
+            if slide_type == "highlights" and not slide.get("lines"):
+                continue
+            if slide_type == "checklist" and not slide.get("items"):
+                continue
+            if slide_type == "quiz" and not (slide.get("quizQuestion") and slide.get("quizOptions")):
+                continue
+
+            slides.append(slide)
+
+        if len(slides) < MIN_COURSE_SLIDES:
+            return None
+        if not has_checklist or not has_quiz:
+            return None
+        if not has_structured_cards:
+            return None
+
+        out: dict[str, Any] = {"courseTitle": course_title, "slides": slides}
+        if subtitle:
+            out["subtitle"] = subtitle
+        return out
 
     def _normalize_text(self, value: Any, max_len: int) -> str:
         text = str(value or "").strip()

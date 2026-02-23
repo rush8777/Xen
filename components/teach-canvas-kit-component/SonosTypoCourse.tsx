@@ -109,6 +109,138 @@ interface PaletteConfig {
   footerFg: string;
 }
 
+const MAX_HIGHLIGHT_LINES = 5;
+const MAX_HIGHLIGHT_LINE_CHARS = 56;
+const MAX_HIGHLIGHTS_TOTAL_CHARS = 240;
+const MAX_COLUMNS = 3;
+const MAX_COLUMN_BODY_CHARS = 190;
+const MAX_CONTENT_ITEMS = 7;
+
+function cleanText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[*_`#>~]/g, " ")
+    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateText(value: string, maxChars: number): string {
+  const text = cleanText(value);
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars - 1).trimEnd()}…`;
+}
+
+function normalizeLinesFromAny(slide: Slide): string[] {
+  const linesFromSource = [
+    ...(slide.lines ?? []),
+    ...(((slide.items ?? []) as string[]) || []),
+    slide.leftText ?? "",
+    slide.rightText ?? "",
+    slide.body ?? "",
+  ]
+    .flatMap((raw) => cleanText(raw).split(/\n|(?<=[.!?])\s+/))
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return linesFromSource;
+}
+
+function asColumnItemsFromLines(lines: string[]): ColumnItem[] {
+  return lines.slice(0, MAX_COLUMNS).map((line, i) => {
+    const words = line.split(" ").filter(Boolean);
+    const heading = words.slice(0, 4).join(" ") || `Point ${i + 1}`;
+    return {
+      heading: truncateText(heading, 36),
+      body: truncateText(line, MAX_COLUMN_BODY_CHARS),
+    };
+  });
+}
+
+function normalizeSlideForLayout(slide: Slide): Slide {
+  const next: Slide = {
+    ...slide,
+    title: cleanText(slide.title),
+    subtitle: cleanText(slide.subtitle),
+    body: cleanText(slide.body),
+    bigWord: truncateText(slide.bigWord ?? "", 26),
+    leftText: truncateText(slide.leftText ?? "", 260),
+    rightLabel: truncateText(slide.rightLabel ?? "", 38),
+    rightText: truncateText(slide.rightText ?? "", 260),
+    lines: (slide.lines ?? []).map((line) => cleanText(line)).filter(Boolean),
+    paragraphs: (slide.paragraphs ?? []).map((p) => cleanText(p)).filter(Boolean),
+    items: (slide.items ?? []).map((it: any) => (
+      typeof it === "string"
+        ? truncateText(it, 88)
+        : { ...it, text: truncateText((it && it.text) || "", 88) }
+    )),
+    columns: (slide.columns ?? [])
+      .map((col) => ({
+        heading: truncateText(col?.heading ?? "", 42),
+        body: truncateText(col?.body ?? col?.description ?? "", MAX_COLUMN_BODY_CHARS),
+      }))
+      .filter((c) => c.heading || c.body)
+      .slice(0, MAX_COLUMNS),
+    cards: (slide.cards ?? [])
+      .map((card) => ({
+        ...card,
+        heading: truncateText(card?.heading ?? card?.title ?? "", 42),
+        title: truncateText(card?.title ?? card?.heading ?? "", 42),
+        description: truncateText(card?.description ?? card?.body ?? card?.text ?? "", MAX_COLUMN_BODY_CHARS),
+        body: truncateText(card?.body ?? card?.description ?? card?.text ?? "", MAX_COLUMN_BODY_CHARS),
+        text: truncateText(card?.text ?? card?.body ?? card?.description ?? "", MAX_COLUMN_BODY_CHARS),
+      }))
+      .filter((c) => c.heading || c.title || c.description || c.body || c.text)
+      .slice(0, MAX_COLUMNS),
+    quizQuestion: cleanText(slide.quizQuestion),
+    quizOptions: (slide.quizOptions ?? []).map((opt) => truncateText(opt, 84)).slice(0, 6),
+  };
+
+  if (next.type === "contents") {
+    const contentItems = ((next.items ?? []) as string[])
+      .map((item) => truncateText(String(item), 70))
+      .slice(0, MAX_CONTENT_ITEMS);
+    return { ...next, items: contentItems };
+  }
+
+  if (next.type === "highlights") {
+    const candidateLines = normalizeLinesFromAny(next);
+    const cleanedLines = candidateLines.map((line) => truncateText(line, MAX_HIGHLIGHT_LINE_CHARS));
+    const totalChars = cleanedLines.reduce((sum, line) => sum + line.length, 0);
+    const tooDense =
+      cleanedLines.length > MAX_HIGHLIGHT_LINES || totalChars > MAX_HIGHLIGHTS_TOTAL_CHARS;
+
+    if (!cleanedLines.length) {
+      return {
+        ...next,
+        type: "overview",
+        title: next.title || "Overview",
+        paragraphs: [next.body || "Content unavailable for this slide."],
+      };
+    }
+
+    if (tooDense) {
+      return {
+        ...next,
+        type: "columns",
+        title: next.title || "Key Ideas",
+        columns: asColumnItemsFromLines(candidateLines),
+      };
+    }
+
+    return {
+      ...next,
+      lines: cleanedLines.slice(0, MAX_HIGHLIGHT_LINES),
+    };
+  }
+
+  return next;
+}
+
+function normalizeCourseSlides(slides: Slide[]): Slide[] {
+  return (slides ?? []).map(normalizeSlideForLayout);
+}
+
 // ─── Palette definitions ──────────────────────────────────────────────────────
 
 const PALETTES: Record<PaletteName, PaletteConfig> = {
@@ -778,7 +910,11 @@ export default function SonosTypoCourse({
   style = {},
   className = "",
 }: SonosTypoCourseProps): JSX.Element | null {
-  const slides = courseData.slides ?? [];
+  const normalizedCourse: CourseData = {
+    ...courseData,
+    slides: normalizeCourseSlides(courseData.slides ?? []),
+  };
+  const slides = normalizedCourse.slides ?? [];
   const [idx, setIdx] = useState<number>(0);
   const [quizPassed, setQuizPassed] = useState<boolean>(false);
   const [animKey, setAnimKey] = useState<number>(0);
@@ -791,6 +927,11 @@ export default function SonosTypoCourse({
     el.textContent = FONT_CSS;
     document.head.appendChild(el);
   }, []);
+
+  useEffect(() => {
+    if (!slides.length) return;
+    if (idx >= slides.length) setIdx(slides.length - 1);
+  }, [slides.length, idx]);
 
   if (!slides.length) return null;
 
@@ -813,7 +954,7 @@ export default function SonosTypoCourse({
   const sharedProps: SlideSharedProps = {
     slide,
     p,
-    course: courseData,
+    course: normalizedCourse,
     slideNum: idx + 1,
     totalSlides: slides.length,
   };

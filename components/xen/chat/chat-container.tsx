@@ -54,9 +54,15 @@ const ChatContainer = () => {
   const [courseClarificationQuestions, setCourseClarificationQuestions] = useState<CourseClarificationQuestion[]>([])
   const [courseClarificationValues, setCourseClarificationValues] = useState<Record<string, string>>({})
   const [selectedCourseTemplate, setSelectedCourseTemplate] = useState<CourseTemplateId>("default")
+  const [courseModeEnabled, setCourseModeEnabled] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const projectIdParam = searchParams.get("projectId")
+  const resolvedProjectId =
+    projectIdParam && Number.isFinite(Number(projectIdParam))
+      ? Number(projectIdParam)
+      : null
 
   const isValidCourseData = (value: unknown): value is CourseSlides => {
     if (!value || typeof value !== "object") return false
@@ -187,8 +193,13 @@ const ChatContainer = () => {
   const handleSendMessage = async (
     content: string,
     mentionedProject?: string,
-    clarificationAnswers?: Record<string, string>
+    clarificationAnswers?: Record<string, string>,
+    courseModeEnabledOverride?: boolean
   ) => {
+    const effectiveCourseModeEnabled =
+      typeof courseModeEnabledOverride === "boolean"
+        ? courseModeEnabledOverride
+        : courseModeEnabled
     const resolvedCourseAnswers: Record<string, string> = {
       ...(clarificationAnswers || {}),
       course_template: selectedCourseTemplate,
@@ -251,9 +262,11 @@ const ChatContainer = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
+          project_id: resolvedProjectId,
           message: content,
           user_id: null,
           course_clarification_answers: resolvedCourseAnswers,
+          course_mode_enabled: effectiveCourseModeEnabled,
         })
       })
 
@@ -263,9 +276,11 @@ const ChatContainer = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id: chatId,
+            project_id: resolvedProjectId,
             message: content,
             user_id: null,
             course_clarification_answers: resolvedCourseAnswers,
+            course_mode_enabled: effectiveCourseModeEnabled,
           }),
         })
 
@@ -567,6 +582,7 @@ const ChatContainer = () => {
     setCourseClarificationQuestions([])
     setCourseClarificationValues({})
     setSelectedCourseTemplate("default")
+    setCourseModeEnabled(false)
   }
 
   const handleClarificationAnswerChange = (id: string, value: string) => {
@@ -619,7 +635,8 @@ const ChatContainer = () => {
     await handleSendMessage(
       "Generate the course using the provided clarification answers.",
       undefined,
-      answers
+      answers,
+      true
     )
   }
 
@@ -829,7 +846,11 @@ const ChatContainer = () => {
                   </div>
                 </div>
               )}
-              <ChatInput onSend={handleSendMessage} />
+              <ChatInput
+                onSend={handleSendMessage}
+                courseModeEnabled={courseModeEnabled}
+                onToggleCourseMode={() => setCourseModeEnabled((prev) => !prev)}
+              />
             </div>
           </div>
         </>

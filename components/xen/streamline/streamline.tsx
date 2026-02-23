@@ -12,11 +12,10 @@ import {
   FileText,
   Search,
   Scissors,
-  Megaphone,
-  Cpu,
   Play,
   Volume2,
   Clock,
+  Star,
   Users,
   Settings2,
   Calendar,
@@ -56,6 +55,22 @@ type VectorStatus = {
   error: string | null
 }
 
+type FeatureId = "clips" | "subtitles" | "chapters" | "moments"
+type FeatureStatus = "not_started" | "loading" | "processing" | "completed" | "error"
+type FeatureState = {
+  status: FeatureStatus
+  progress: number
+  error: string | null
+  updated_at: string | null
+}
+
+type ContentFeatureStatusResponse = {
+  project_id: number
+  features: Record<FeatureId, FeatureState>
+  started_at: string | null
+  completed_at: string | null
+}
+
 const Skeleton = ({ className }: { className?: string }) => {
   return <div className={cn("animate-pulse rounded-md", className)} />
 }
@@ -89,9 +104,10 @@ const toptabs = [
   { id: "overview", label: "Video Overview", icon: MessageCircle },
   { id: "statistics", label: "Statistics", icon: Search },
   { id: "transcription", label: "Video Transcription", icon: FileText },
-  { id: "editor", label: "Video Editor", icon: Scissors },
-  { id: "marketer", label: "Video Marketer", icon: Megaphone, badge: "Agent" },
-  { id: "hardware", label: "AI Hardware", icon: Cpu, badge: "Agent" },
+  { id: "clips", label: "Clip Generator", icon: Scissors },
+  { id: "subtitles", label: "Subtitles", icon: Volume2 },
+  { id: "chapters", label: "Chapters", icon: Clock },
+  { id: "moments", label: "Key Moments", icon: Star },
 ]
 
 const tabs = [
@@ -161,6 +177,57 @@ const currentProject = {
   videoLink: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
   platform: "YouTube",
   thumbnail: getThumbnailUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ") || "/images/design-mode/Screenshot%202025-05-08%20133020(1).png"
+}
+
+const featureLoadingSteps: Record<FeatureId, string[]> = {
+  clips: [
+    "Analyzing video for viral moments...",
+    "Finding the best 30-60 second segments",
+    "Identifying emotional peaks and hooks",
+    "Calculating viral potential scores",
+  ],
+  subtitles: [
+    "Using existing transcript from chat analysis",
+    "Optimizing text for subtitle formatting",
+    "Generating translations (if requested)",
+    "Creating export formats (SRT, VTT)",
+    "Applying style customizations",
+  ],
+  chapters: [
+    "Analyzing content flow and topics",
+    "Identifying natural break points",
+    "Creating meaningful chapter titles",
+    "Selecting representative thumbnails",
+  ],
+  moments: [
+    "Detecting emotional highlights",
+    "Finding critical insights and information",
+    "Scoring moments by importance",
+    "Organizing highlights by category",
+  ],
+}
+
+const defaultFeatureState: FeatureState = {
+  status: "not_started",
+  progress: 0,
+  error: null,
+  updated_at: null,
+}
+
+const defaultFeatureMap: Record<FeatureId, FeatureState> = {
+  clips: { ...defaultFeatureState },
+  subtitles: { ...defaultFeatureState },
+  chapters: { ...defaultFeatureState },
+  moments: { ...defaultFeatureState },
+}
+
+const formatSeconds = (seconds: number) => {
+  const s = Math.max(0, Math.floor(seconds || 0))
+  const hh = Math.floor(s / 3600)
+  const mm = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  if (hh > 0) return `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
+  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
 }
 
 function StreamlineSkeleton({ isDark }: { isDark: boolean }) {
@@ -491,6 +558,17 @@ export default function Streamline() {
   const [editorMessages, setEditorMessages] = useState([
     { id: 1, content: "Hi! I'm your AI video editor assistant. How can I help you edit this video today?", isUser: false },
   ])
+  const [contentFeatureStatus, setContentFeatureStatus] = useState<Record<FeatureId, FeatureState>>(defaultFeatureMap)
+  const [contentFeatureData, setContentFeatureData] = useState<Record<FeatureId, any>>({
+    clips: null,
+    subtitles: null,
+    chapters: null,
+    moments: null,
+  })
+  const [selectedLanguage, setSelectedLanguage] = useState("en")
+  const [subtitleStyle, setSubtitleStyle] = useState("default")
+  const [exportFormat, setExportFormat] = useState<"srt" | "vtt">("srt")
+  const [contentFeatureError, setContentFeatureError] = useState<string | null>(null)
 
   const placeholderMarkdown = `# Taxing Laughter: The Joke Tax Chronicles\n\nOnce upon a time, in a far-off land, there was a very lazy king who spent all day lounging on his throne. One day, his advisors came to him with a problem: the kingdom was running out of money.\n`
 
@@ -695,6 +773,298 @@ export default function Streamline() {
     }, 1000)
   }
 
+  const fetchContentFeatureStatus = React.useCallback(async () => {
+    if (!projectId) return
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/content-features/status`,
+        { cache: "no-store" }
+      )
+      if (!res.ok) throw new Error(`Failed to load content feature status (${res.status})`)
+      const data = (await res.json()) as ContentFeatureStatusResponse
+      setContentFeatureStatus(data.features || defaultFeatureMap)
+      setContentFeatureError(null)
+      return data.features || defaultFeatureMap
+    } catch (e: any) {
+      setContentFeatureError(e?.message || "Failed to load content feature status")
+      return null
+    }
+  }, [projectId])
+
+  const triggerContentFeatureGeneration = React.useCallback(async (force = false) => {
+    if (!projectId) return
+    try {
+      await fetch(
+        `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/content-features/generate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force }),
+        }
+      )
+    } catch (e) {
+      // keep non-blocking UX
+    }
+  }, [projectId])
+
+  const loadFeaturePayload = React.useCallback(async (featureId: FeatureId) => {
+    if (!projectId) return
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/content-features/${featureId}`,
+        { cache: "no-store" }
+      )
+      if (!res.ok) return
+      const data = await res.json()
+      setContentFeatureData((prev) => ({ ...prev, [featureId]: data?.payload || null }))
+    } catch {
+      // no-op
+    }
+  }, [projectId])
+
+  const handleExportSubtitles = React.useCallback(async () => {
+    if (!projectId) return
+    const res = await fetch(
+      `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/content-features/subtitles/export`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ format: exportFormat, language: selectedLanguage }),
+      }
+    )
+    if (!res.ok) return
+    const data = await res.json()
+    const blob = new Blob([data.content], { type: data.mime_type || "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = data.filename || `subtitles.${exportFormat}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }, [projectId, exportFormat, selectedLanguage])
+
+  useEffect(() => {
+    if (!projectId) return
+    if (projectOverview?.status !== "completed") return
+    triggerContentFeatureGeneration(false)
+  }, [projectId, projectOverview?.status, triggerContentFeatureGeneration])
+
+  useEffect(() => {
+    if (!projectId) return
+    if (projectOverview?.status !== "completed") return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const poll = async () => {
+      if (cancelled) return
+      const state = await fetchContentFeatureStatus()
+      if (!state) {
+        timer = setTimeout(poll, 2500)
+        return
+      }
+      const values = Object.values(state || {})
+      const done = values.length > 0 && values.every((v) => v.status === "completed" || v.status === "error")
+      if (!done) timer = setTimeout(poll, 2500)
+    }
+
+    poll()
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [projectId, projectOverview?.status, fetchContentFeatureStatus])
+
+  useEffect(() => {
+    const featureTabs: FeatureId[] = ["clips", "subtitles", "chapters", "moments"]
+    for (const featureId of featureTabs) {
+      if (contentFeatureStatus[featureId]?.status === "completed" && !contentFeatureData[featureId]) {
+        loadFeaturePayload(featureId)
+      }
+    }
+  }, [contentFeatureStatus, contentFeatureData, loadFeaturePayload])
+
+  const featureTabIds: FeatureId[] = ["clips", "subtitles", "chapters", "moments"]
+  const activeFeatureId = (featureTabIds.includes(activeTopTab as FeatureId) ? activeTopTab : null) as FeatureId | null
+  const activeFeatureState = activeFeatureId ? contentFeatureStatus[activeFeatureId] : null
+
+  const renderFeatureStatusPanel = (featureId: FeatureId) => {
+    const state = contentFeatureStatus[featureId] || defaultFeatureState
+    const steps = featureLoadingSteps[featureId]
+    const currentStepIdx = Math.min(steps.length - 1, Math.floor((state.progress || 0) / Math.max(1, Math.floor(100 / steps.length))))
+    return (
+      <Card className={cn(isDark ? "border-zinc-800 bg-zinc-900/60" : "border-gray-200 bg-white")}>
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className={cn("text-sm font-semibold", isDark ? "text-white" : "text-gray-900")}>Processing {featureId}</h3>
+            <span className={cn("text-xs", isDark ? "text-zinc-400" : "text-gray-500")}>
+              {state.status} • {state.progress}%
+            </span>
+          </div>
+          <div className={cn("h-2 rounded-full overflow-hidden", isDark ? "bg-zinc-800" : "bg-gray-200")}>
+            <div
+              className={cn("h-full transition-all duration-500", state.status === "error" ? "bg-red-500" : "bg-blue-500")}
+              style={{ width: `${Math.max(0, Math.min(100, state.progress || 0))}%` }}
+            />
+          </div>
+          <div className="space-y-2">
+            {steps.map((step, idx) => (
+              <div key={step} className={cn("text-xs", idx <= currentStepIdx ? (isDark ? "text-zinc-200" : "text-gray-700") : (isDark ? "text-zinc-500" : "text-gray-400"))}>
+                {step}
+              </div>
+            ))}
+          </div>
+          {state.error && (
+            <div className={cn("text-xs", isDark ? "text-red-300" : "text-red-600")}>{state.error}</div>
+          )}
+          {state.status === "error" && (
+            <button
+              onClick={() => triggerContentFeatureGeneration(true)}
+              className={cn(
+                "px-3 py-1.5 text-xs rounded-md border",
+                isDark ? "border-zinc-700 text-zinc-200 hover:bg-zinc-800" : "border-gray-300 text-gray-700 hover:bg-gray-50"
+              )}
+            >
+              Retry Generation
+            </button>
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const renderFeatureContent = () => {
+    if (!activeFeatureId || !activeFeatureState) return null
+    if (activeFeatureState.status !== "completed") {
+      return (
+        <div className="space-y-4">
+          {contentFeatureError && (
+            <div className={cn("text-xs", isDark ? "text-red-300" : "text-red-600")}>{contentFeatureError}</div>
+          )}
+          {renderFeatureStatusPanel(activeFeatureId)}
+        </div>
+      )
+    }
+
+    if (activeFeatureId === "clips") {
+      const clips = contentFeatureData.clips?.clips || []
+      return (
+        <div className="grid gap-3">
+          {clips.map((clip: any) => (
+            <Card key={clip.id} className={cn(isDark ? "border-zinc-800 bg-zinc-900/60" : "border-gray-200 bg-white")}>
+              <CardContent className="pt-5 space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <h3 className={cn("text-sm font-semibold", isDark ? "text-white" : "text-gray-900")}>{clip.title}</h3>
+                  <span className={cn("text-xs", isDark ? "text-zinc-300" : "text-gray-600")}>Viral score: {clip.viral_score}</span>
+                </div>
+                <p className={cn("text-xs", isDark ? "text-zinc-400" : "text-gray-500")}>
+                  {formatSeconds(clip.start_time_seconds)} - {formatSeconds(clip.end_time_seconds)} ({formatSeconds(clip.duration_seconds)})
+                </p>
+                <p className={cn("text-xs", isDark ? "text-zinc-300" : "text-gray-700")}>{clip.suggested_caption}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )
+    }
+
+    if (activeFeatureId === "subtitles") {
+      const subtitles = contentFeatureData.subtitles?.segments || []
+      return (
+        <div className="space-y-4">
+          <Card className={cn(isDark ? "border-zinc-800 bg-zinc-900/60" : "border-gray-200 bg-white")}>
+            <CardContent className="pt-5 flex flex-wrap items-center gap-3">
+              <select
+                value={selectedLanguage}
+                onChange={(e) => setSelectedLanguage(e.target.value)}
+                className={cn("px-2 py-1 text-xs rounded border", isDark ? "bg-zinc-900 border-zinc-700 text-zinc-200" : "bg-white border-gray-300 text-gray-700")}
+              >
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+              </select>
+              <select
+                value={subtitleStyle}
+                onChange={(e) => setSubtitleStyle(e.target.value)}
+                className={cn("px-2 py-1 text-xs rounded border", isDark ? "bg-zinc-900 border-zinc-700 text-zinc-200" : "bg-white border-gray-300 text-gray-700")}
+              >
+                <option value="default">Default</option>
+                <option value="contrast">High Contrast</option>
+                <option value="minimal">Minimal</option>
+              </select>
+              <select
+                value={exportFormat}
+                onChange={(e) => setExportFormat((e.target.value as "srt" | "vtt"))}
+                className={cn("px-2 py-1 text-xs rounded border", isDark ? "bg-zinc-900 border-zinc-700 text-zinc-200" : "bg-white border-gray-300 text-gray-700")}
+              >
+                <option value="srt">SRT</option>
+                <option value="vtt">VTT</option>
+              </select>
+              <button
+                onClick={handleExportSubtitles}
+                className={cn("px-3 py-1.5 text-xs rounded border", isDark ? "border-zinc-700 text-zinc-100 hover:bg-zinc-800" : "border-gray-300 text-gray-700 hover:bg-gray-50")}
+              >
+                Export
+              </button>
+            </CardContent>
+          </Card>
+          <div className="grid gap-2">
+            {subtitles.map((s: any, idx: number) => (
+              <Card key={`${s.start_time_seconds}-${idx}`} className={cn(isDark ? "border-zinc-800 bg-zinc-900/60" : "border-gray-200 bg-white")}>
+                <CardContent className="pt-4">
+                  <p className={cn("text-xs mb-1", isDark ? "text-zinc-400" : "text-gray-500")}>
+                    {formatSeconds(s.start_time_seconds)} - {formatSeconds(s.end_time_seconds)}
+                  </p>
+                  <p className={cn("text-sm", isDark ? "text-zinc-100" : "text-gray-800")}>{(s.lines || []).join(" / ") || s.text}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
+    if (activeFeatureId === "chapters") {
+      const chapters = contentFeatureData.chapters?.chapters || []
+      return (
+        <div className="grid gap-3">
+          {chapters.map((chapter: any) => (
+            <Card key={chapter.id} className={cn(isDark ? "border-zinc-800 bg-zinc-900/60" : "border-gray-200 bg-white")}>
+              <CardContent className="pt-5 space-y-1">
+                <h3 className={cn("text-sm font-semibold", isDark ? "text-white" : "text-gray-900")}>{chapter.title}</h3>
+                <p className={cn("text-xs", isDark ? "text-zinc-400" : "text-gray-500")}>
+                  {formatSeconds(chapter.start_time_seconds)} - {formatSeconds(chapter.end_time_seconds)}
+                </p>
+                <p className={cn("text-xs", isDark ? "text-zinc-300" : "text-gray-700")}>{chapter.summary}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )
+    }
+
+    const moments = contentFeatureData.moments?.moments || []
+    return (
+      <div className="grid gap-3">
+        {moments.map((moment: any) => (
+          <Card key={moment.id} className={cn(isDark ? "border-zinc-800 bg-zinc-900/60" : "border-gray-200 bg-white")}>
+            <CardContent className="pt-5 space-y-2">
+              <div className="flex items-center justify-between gap-4">
+                <h3 className={cn("text-sm font-semibold", isDark ? "text-white" : "text-gray-900")}>{moment.label}</h3>
+                <span className={cn("text-[10px] px-2 py-0.5 rounded", isDark ? "bg-zinc-800 text-zinc-300" : "bg-gray-100 text-gray-700")}>{moment.category}</span>
+              </div>
+              <p className={cn("text-xs", isDark ? "text-zinc-400" : "text-gray-500")}>
+                {formatSeconds(moment.start_time_seconds)} - {formatSeconds(moment.end_time_seconds)} • Score {moment.importance_score}
+              </p>
+              <p className={cn("text-xs", isDark ? "text-zinc-300" : "text-gray-700")}>{moment.rationale}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className={cn("min-h-screen py-6 px-4")}>
       <div className="max-w-7xl mx-auto">
@@ -878,6 +1248,18 @@ export default function Streamline() {
           <div className="lg:col-span-5">
             <VideoAnalytics />
           </div>
+        ) : activeFeatureId ? (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className={cn("text-lg font-semibold", isDark ? "text-white" : "text-gray-900")}>
+                {toptabs.find((t) => t.id === activeFeatureId)?.label}
+              </h2>
+              <span className={cn("text-xs", isDark ? "text-zinc-400" : "text-gray-500")}>
+                {(contentFeatureStatus[activeFeatureId]?.status || "not_started").toUpperCase()}
+              </span>
+            </div>
+            {renderFeatureContent()}
+          </div>
         ) : (
           /* Original Video Chat View */
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -1037,22 +1419,21 @@ export default function Streamline() {
           </div>
         )}
 
-        {activeTopTab !== "editor" && (
-          <FloatingVideoChat
-            initialMessages={[
-              {
-                id: 1,
-                content: "What were main pain points discussed in this meeting?",
-                isUser: true,
-              },
-              {
-                id: 2,
-                content: "Disconnected tools, manual processes, and inconsistent follow-ups.",
-                isUser: false,
-              },
-            ]}
-          />
-        )}
+        <FloatingVideoChat
+          projectId={projectId}
+          initialMessages={[
+            {
+              id: 1,
+              content: "What were main pain points discussed in this meeting?",
+              isUser: true,
+            },
+            {
+              id: 2,
+              content: "Disconnected tools, manual processes, and inconsistent follow-ups.",
+              isUser: false,
+            },
+          ]}
+        />
 
         {/* Video Player Modal */}
         <VideoPlayerModal
