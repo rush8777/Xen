@@ -590,7 +590,7 @@ function ChatRow({ chat, index }: { chat: RecentChatItem; index: number }) {
             <img
               src="/images/icons/Recent_project_empty.png"
               alt="No recent projects"
-              className="w-50 h-40 object-cover rounded-lg mb-4 opacity-50"
+              className="w-32 h-24 object-cover rounded-lg mb-4 opacity-40"
             />
             <p className="text-sm text-gray-500 dark:text-gray-400">No recent projects</p>
           </div>
@@ -678,31 +678,7 @@ function ChatRow({ chat, index }: { chat: RecentChatItem; index: number }) {
         )}
       </div>
 
-      {/* My Chats Section */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium text-gray-400 dark:text-gray-500">My Chats</h2>
-          <Link href="/library" className="text-sm text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium flex items-center gap-1">
-            View All
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-
-        <div className="flex justify-center">
-          <div className="w-full max-w-4xl">
-            {recentChats.length > 0 ? (
-              recentChats.slice(0, 5).map((chat, index) => (
-                <ChatRow key={chat.id} chat={chat} index={index} />
-              ))
-            ) : (
-              <div className="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">
-                No chats yet
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
+      
       {/* Create Project Modal */}
       <CreateProjectModal 
         isOpen={isModalOpen}
