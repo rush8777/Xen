@@ -2,13 +2,36 @@ from __future__ import annotations
 
 from typing import Optional
 from datetime import date
+from datetime import datetime
+import concurrent.futures
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..dependencies import get_db
-from ..models import Project, User
+from ..models import (
+    AnalysisInterval,
+    AnalysisRecord,
+    AnalysisRun,
+    PipelineJob,
+    PipelineJobEvent,
+    PremiumIntervalAnalysis,
+    PremiumPerformanceInterval,
+    PremiumPsychologicalInterval,
+    PremiumStructuralInterval,
+    PremiumTranscriptInterval,
+    PremiumVerificationInterval,
+    Project,
+    ProjectContentFeatures,
+    ProjectOverview,
+    ProjectPremiumAnalysis,
+    ProjectPsychologyAnalysis,
+    ProjectStatistics,
+    User,
+    Video,
+)
+from ..services.thumbnail_extractor import detect_platform, extract_thumbnail_url
 
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -48,6 +71,7 @@ class ProjectResponse(BaseModel):
     category: Optional[str]
     description: Optional[str]
     video_url: Optional[str]
+    thumbnail_url: Optional[str] = None
     video_id: Optional[int]
     priority: Optional[str]
     progress: int
@@ -62,6 +86,21 @@ class ProjectResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EnsureThumbnailResponse(BaseModel):
+    project_id: int
+    thumbnail_url: Optional[str] = None
+    source: str
+
+
+def _extract_thumbnail_with_timeout(url: str, timeout_seconds: float = 8.0) -> Optional[str]:
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(extract_thumbnail_url, url)
+            return future.result(timeout=timeout_seconds)
+    except Exception:
+        return None
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
@@ -100,6 +139,7 @@ def create_project(
         category=db_project.category,
         description=db_project.description,
         video_url=db_project.video_url,
+        thumbnail_url=db_project.video.thumbnail_url if db_project.video else None,
         video_id=db_project.video_id,
         priority=db_project.priority,
         progress=db_project.progress,
@@ -122,7 +162,7 @@ def list_projects(
     status: Optional[str] = Query(None, description="Filter by status"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-) -> list[ProjectResponse]:
+    ) -> list[ProjectResponse]:
     """List projects with optional filtering"""
     query = db.query(Project)
 
@@ -143,6 +183,7 @@ def list_projects(
             category=p.category,
             description=p.description,
             video_url=p.video_url,
+            thumbnail_url=p.video.thumbnail_url if p.video else None,
             video_id=p.video_id,
             priority=p.priority,
             progress=p.progress,
@@ -173,6 +214,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)) -> ProjectRespon
         category=project.category,
         description=project.description,
         video_url=project.video_url,
+        thumbnail_url=project.video.thumbnail_url if project.video else None,
         video_id=project.video_id,
         priority=project.priority,
         progress=project.progress,
@@ -213,6 +255,7 @@ def update_project(
         category=project.category,
         description=project.description,
         video_url=project.video_url,
+        thumbnail_url=project.video.thumbnail_url if project.video else None,
         video_id=project.video_id,
         priority=project.priority,
         progress=project.progress,
@@ -234,9 +277,167 @@ def delete_project(project_id: int, db: Session = Depends(get_db)) -> dict:
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    pipeline_job_ids = [
+        row[0]
+        for row in db.query(PipelineJob.job_id)
+        .filter(PipelineJob.project_id == project_id)
+        .all()
+    ]
+    if pipeline_job_ids:
+        db.query(PipelineJobEvent).filter(
+            PipelineJobEvent.job_id.in_(pipeline_job_ids)
+        ).delete(synchronize_session=False)
+
+    db.query(PipelineJob).filter(PipelineJob.project_id == project_id).delete(
+        synchronize_session=False
+    )
+
+    # Delete project-scoped records that are not configured with DB-level ON DELETE CASCADE.
+    db.query(ProjectStatistics).filter(ProjectStatistics.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectPsychologyAnalysis).filter(ProjectPsychologyAnalysis.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectContentFeatures).filter(ProjectContentFeatures.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectOverview).filter(ProjectOverview.project_id == project_id).delete(synchronize_session=False)
+    db.query(ProjectPremiumAnalysis).filter(ProjectPremiumAnalysis.project_id == project_id).delete(synchronize_session=False)
+    db.query(AnalysisRun).filter(AnalysisRun.project_id == project_id).delete(synchronize_session=False)
+    db.query(PremiumIntervalAnalysis).filter(PremiumIntervalAnalysis.project_id == project_id).delete(synchronize_session=False)
+
+    premium_structural_rows = (
+        db.query(PremiumStructuralInterval)
+        .filter(PremiumStructuralInterval.project_id == project_id)
+        .all()
+    )
+    for row in premium_structural_rows:
+        db.delete(row)
+
+    premium_psychological_rows = (
+        db.query(PremiumPsychologicalInterval)
+        .filter(PremiumPsychologicalInterval.project_id == project_id)
+        .all()
+    )
+    for row in premium_psychological_rows:
+        db.delete(row)
+
+    premium_performance_rows = (
+        db.query(PremiumPerformanceInterval)
+        .filter(PremiumPerformanceInterval.project_id == project_id)
+        .all()
+    )
+    for row in premium_performance_rows:
+        db.delete(row)
+
+    premium_transcript_rows = (
+        db.query(PremiumTranscriptInterval)
+        .filter(PremiumTranscriptInterval.project_id == project_id)
+        .all()
+    )
+    for row in premium_transcript_rows:
+        db.delete(row)
+
+    premium_verification_rows = (
+        db.query(PremiumVerificationInterval)
+        .filter(PremiumVerificationInterval.project_id == project_id)
+        .all()
+    )
+    for row in premium_verification_rows:
+        db.delete(row)
+
+    analysis_records = (
+        db.query(AnalysisRecord)
+        .filter(AnalysisRecord.project_id == project_id)
+        .all()
+    )
+    for row in analysis_records:
+        db.delete(row)
+
+    analysis_child_intervals = (
+        db.query(AnalysisInterval)
+        .filter(
+            AnalysisInterval.project_id == project_id,
+            AnalysisInterval.parent_interval_id.is_not(None),
+        )
+        .all()
+    )
+    for row in analysis_child_intervals:
+        db.delete(row)
+
+    analysis_parent_intervals = (
+        db.query(AnalysisInterval)
+        .filter(
+            AnalysisInterval.project_id == project_id,
+            AnalysisInterval.parent_interval_id.is_(None),
+        )
+        .all()
+    )
+    for row in analysis_parent_intervals:
+        db.delete(row)
+
     db.delete(project)
     db.commit()
 
     return {"status": "ok"}
+
+
+@router.post("/{project_id}/thumbnail/ensure", response_model=EnsureThumbnailResponse)
+def ensure_project_thumbnail(project_id: int, db: Session = Depends(get_db)) -> EnsureThumbnailResponse:
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    video = project.video
+    if video and video.thumbnail_url:
+        return EnsureThumbnailResponse(
+            project_id=project.id,
+            thumbnail_url=video.thumbnail_url,
+            source="cached",
+        )
+
+    if not project.video_url:
+        return EnsureThumbnailResponse(
+            project_id=project.id,
+            thumbnail_url=None,
+            source="missing_video_url",
+        )
+
+    thumbnail_url = _extract_thumbnail_with_timeout(project.video_url, timeout_seconds=8.0)
+    if not thumbnail_url:
+        return EnsureThumbnailResponse(
+            project_id=project.id,
+            thumbnail_url=None,
+            source="extraction_failed",
+        )
+
+    if video:
+        if not video.thumbnail_url:
+            video.thumbnail_url = thumbnail_url
+            db.commit()
+        return EnsureThumbnailResponse(
+            project_id=project.id,
+            thumbnail_url=video.thumbnail_url,
+            source="extracted",
+        )
+
+    video = Video(
+        user_id=project.user_id,
+        title=project.name or "Analyzed Video",
+        description=f"Video analysis for project: {project.name or 'Analyzed Video'}",
+        platform=detect_platform(project.video_url),
+        url=project.video_url,
+        thumbnail_url=thumbnail_url,
+        duration_seconds=project.video_duration_seconds or 30,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+
+    project.video_id = video.id
+    db.commit()
+
+    return EnsureThumbnailResponse(
+        project_id=project.id,
+        thumbnail_url=thumbnail_url,
+        source="created_video_and_extracted",
+    )
 
 

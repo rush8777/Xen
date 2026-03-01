@@ -105,7 +105,10 @@ INTELLIGENT ANALYSIS RULES:
    - Negative (0-100): Challenging, heavy, critical topics
    - Both can overlap for complex emotions
 
-4. **Generate 6-10 data points** evenly distributed across video duration
+4. Use adaptive cadence by duration:
+   - 2s spacing if total duration <= 600 seconds
+   - 3s spacing if total duration > 600 seconds
+5. Return full ordered timeline points from start to end, including first and last timestamps.
 
 EXAMPLE OUTPUT:
 [
@@ -116,7 +119,7 @@ EXAMPLE OUTPUT:
 ]
 
 OUTPUT REQUIREMENTS:
-- Generate at least 6 data points
+- Generate dense ordered points at the required 2s/3s cadence
 - Use timestamps from the provided data
 - Never return []
 - Return only JSON (no markdown code blocks)
@@ -232,9 +235,58 @@ INTELLIGENT ANALYSIS RULES:
    - Deep philosophical question → confused, intensity 70
 
 OUTPUT REQUIREMENTS:
-- Generate 8-12 data points across video
-- Use actual timestamps from data
+- Use adaptive cadence by duration:
+  - 2s spacing if total duration <= 600 seconds
+  - 3s spacing if total duration > 600 seconds
+- Return full ordered timeline points from start to end, including first and last timestamps
 - Vary intensity based on message weight
+- Never return []
+- Return only JSON (no markdown)
+"""
+
+    def _create_prompt_engagement_trend_curve(self, compact_data: str, video_url: str, project_name: str) -> str:
+        return f"""
+SYSTEM ROLE:
+You produce a unified engagement trend timeline for video content.
+You combine speech energy, pace, and key-moment intensity into one engagement curve.
+
+VIDEO CONTEXT:
+URL: {video_url}
+PROJECT: {project_name}
+
+DATA:
+{compact_data}
+
+REQUIRED OUTPUT (JSON ONLY, NO MARKDOWN):
+[
+  {{
+    "time": "MM:SS",
+    "engagement": <integer 0-100>,
+    "speech_energy": <integer 0-100>,
+    "pace": <integer 60-220>,
+    "key_moment_boost": <integer 0-100>
+  }}
+]
+
+INTELLIGENT ANALYSIS RULES:
+1. Use adaptive cadence by duration:
+   - 2s spacing if total duration <= 600 seconds
+   - 3s spacing if total duration > 600 seconds
+2. Return full ordered timeline points from start to end, including first and last timestamps.
+3. Infer **speech_energy** from emotional tone and message intensity.
+4. Infer **pace** as an estimated speaking-speed trend (WPM-style).
+5. Infer **key_moment_boost** from emphasis, memorable statements, and turning points.
+6. Compute **engagement** as a weighted blend:
+   - speech_energy: ~45%
+   - normalized pace: ~25%
+   - key_moment_boost: ~30%
+7. Keep time order ascending and trend realistic (no random spikes without context).
+
+OUTPUT REQUIREMENTS:
+- Generate dense ordered points at the required 2s/3s cadence
+- All numeric fields must be integers
+- engagement/speech_energy/key_moment_boost must stay within 0-100
+- pace must stay within 60-220
 - Never return []
 - Return only JSON (no markdown)
 """
@@ -528,29 +580,56 @@ OUTPUT REQUIREMENTS:
 - Return only JSON (no markdown)
 """
 
-    def build_prompt(self, component_name: str, compact_data: str, video_url: str, project_name: str) -> str:
+    def build_prompt(
+        self,
+        component_name: str,
+        compact_data: str,
+        video_url: str,
+        project_name: str,
+        duration_seconds: float | None = None,
+    ) -> str:
         """Build the appropriate prompt for the component"""
         
         if component_name == "video_metrics_grid":
-            return self._create_prompt_video_metrics_grid(compact_data, video_url, project_name)
+            prompt = self._create_prompt_video_metrics_grid(compact_data, video_url, project_name)
         elif component_name == "sentiment_pulse":
-            return self._create_prompt_sentiment_pulse(compact_data, video_url, project_name)
+            prompt = self._create_prompt_sentiment_pulse(compact_data, video_url, project_name)
         elif component_name == "emotion_radar":
-            return self._create_prompt_emotion_radar(compact_data, video_url, project_name)
+            prompt = self._create_prompt_emotion_radar(compact_data, video_url, project_name)
         elif component_name == "emotional_intensity_timeline":
-            return self._create_prompt_emotional_intensity_timeline(compact_data, video_url, project_name)
+            prompt = self._create_prompt_emotional_intensity_timeline(compact_data, video_url, project_name)
+        elif component_name == "engagement_trend_curve":
+            prompt = self._create_prompt_engagement_trend_curve(compact_data, video_url, project_name)
         elif component_name == "audience_demographics.age_distribution":
-            return self._create_prompt_audience_age_distribution(compact_data, video_url, project_name)
+            prompt = self._create_prompt_audience_age_distribution(compact_data, video_url, project_name)
         elif component_name == "audience_demographics.gender_distribution":
-            return self._create_prompt_audience_gender_distribution(compact_data, video_url, project_name)
+            prompt = self._create_prompt_audience_gender_distribution(compact_data, video_url, project_name)
         elif component_name == "audience_demographics.top_locations":
-            return self._create_prompt_audience_top_locations(compact_data, video_url, project_name)
+            prompt = self._create_prompt_audience_top_locations(compact_data, video_url, project_name)
         elif component_name == "audience_demographics.audience_interests":
-            return self._create_prompt_audience_interests(compact_data, video_url, project_name)
+            prompt = self._create_prompt_audience_interests(compact_data, video_url, project_name)
         elif component_name == "top_comments":
-            return self._create_prompt_top_comments(compact_data, video_url, project_name)
-        
-        raise ValueError(f"Unknown statistics component: {component_name}")
+            prompt = self._create_prompt_top_comments(compact_data, video_url, project_name)
+        else:
+            raise ValueError(f"Unknown statistics component: {component_name}")
+
+        duration_note = ""
+        if duration_seconds and duration_seconds > 0:
+            total_duration = int(duration_seconds)
+            cadence_seconds = 2 if total_duration <= 600 else 3
+            exact_entries = max(1, total_duration // cadence_seconds)
+            duration_note = (
+                f"\n\nVIDEO DURATION CONTEXT:\n"
+                f"- total_duration_seconds: {total_duration}\n"
+                f"- cadence_rule: 2s if <= 600s, else 3s\n"
+                f"- selected_cadence_seconds: {cadence_seconds}\n"
+                f"- EXACT OUTPUT COUNT: return exactly {exact_entries} timeline entries (no more, no fewer)\n"
+                f"- counting_rule: each entry represents one {cadence_seconds}s segment\n"
+                f"- example_for_60s_video: 30 entries at 2s cadence OR 20 entries at 3s cadence\n"
+            )
+        if duration_note:
+            prompt = prompt.rstrip() + duration_note
+        return prompt
 
 
 # Global instance

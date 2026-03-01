@@ -2,6 +2,7 @@
 
 import React, { useState } from "react"
 import { cn } from "@/lib/utils"
+import { DarkVeil } from "@/components/ui/dark-veil"
 
 // ─── Shared assets ────────────────────────────────────────────────────────────
 
@@ -102,12 +103,11 @@ function GalaxyPanel() {
 
 function Logo() {
   return (
-    <div className="flex items-center gap-2">
-      <div className="w-5 h-5 rounded-full bg-zinc-700 border border-zinc-600 flex items-center justify-center">
-        <div className="w-2 h-2 rounded-full bg-zinc-400" />
-      </div>
-      <span className="text-sm font-medium text-zinc-300 tracking-wide">Orion</span>
-    </div>
+    <img 
+      src="/images/icons/logo_full'.png" 
+      alt="Orion Logo"
+      className="h-8 w-auto"
+    />
   )
 }
 
@@ -224,19 +224,29 @@ function Divider() {
 export default function SignupPage() {
   const [email, setEmail] = useState("")
   const [name, setName] = useState("")
-  const [password, setPassword] = useState("")
 
   return (
     <div
-      className="min-h-screen w-full flex items-center justify-center"
+      className="min-h-screen w-full flex items-center justify-center relative"
       style={{ background: "#111110" }}
     >
+      {/* Dark Veil Background Animation */}
+      <DarkVeil 
+        className="absolute inset-0 z-0"
+        hueShift={0}
+        noiseIntensity={0.15}
+        scanlineIntensity={0.08}
+        warpAmount={0.03}
+        scanlineFrequency={4.0}
+        speed={1.2}
+      />
+      
       <div
-        className="w-full max-w-5xl mx-4 rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-2"
+        className="w-full max-w-5xl mx-4 rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-2 relative z-10"
         style={{
           background: "#161614",
           border: "1px solid rgba(255,255,255,0.07)",
-          minHeight: 560,
+          minHeight: 540,
         }}
       >
         {/* ── Left: Form ── */}
@@ -257,10 +267,7 @@ export default function SignupPage() {
             <Logo />
 
             <div>
-              <h1
-                className="text-3xl font-bold text-white leading-tight"
-                style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
-              >
+              <h1 className="text-3xl font-bold text-white leading-tight">
                 Start watching the<br />
                 darkness with us
               </h1>
@@ -288,14 +295,6 @@ export default function SignupPage() {
                 placeholder="Your email"
                 value={email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-              />
-
-              <AuthInput
-                label="Password"
-                type="password"
-                placeholder="Create a password"
-                value={password}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
               />
 
               <PrimaryButton onClick={() => {}}>Continue with email</PrimaryButton>

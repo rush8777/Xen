@@ -10,8 +10,10 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceDot,
+  ReferenceLine,
 } from "recharts"
 import { TrendingUp, TrendingDown } from "lucide-react"
+import { getNearestTimelineLabel, getVisibleTimelineData } from "./timeline-utils"
 
 export interface EmotionalIntensityPoint {
   time: string
@@ -52,10 +54,12 @@ const CustomTooltip = ({ active, payload }: any) => {
 
 interface EmotionalIntensityChartProps {
   data?: EmotionalIntensityPoint[]
+  currentTimeSeconds?: number
 }
 
 export default function EmotionalIntensityChart({ 
-  data
+  data,
+  currentTimeSeconds = Number.POSITIVE_INFINITY,
 }: EmotionalIntensityChartProps) {
   const hasData = Array.isArray(data) && data.length > 0
 
@@ -77,8 +81,10 @@ export default function EmotionalIntensityChart({
     )
   }
 
-  const peaks = findPeaks(data)
-  const drops = findDrops(data)
+  const visibleData = getVisibleTimelineData(data || [], currentTimeSeconds)
+  const activeLabel = getNearestTimelineLabel(data || [], currentTimeSeconds)
+  const peaks = findPeaks(visibleData)
+  const drops = findDrops(visibleData)
 
   return (
     <div className="rounded-xl border p-6 bg-zinc-900/50 border-zinc-800">
@@ -112,7 +118,7 @@ export default function EmotionalIntensityChart({
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
-            data={data}
+            data={visibleData}
             margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
           >
             <defs>
@@ -154,6 +160,9 @@ export default function EmotionalIntensityChart({
             />
             
             <Tooltip content={<CustomTooltip />} />
+            {activeLabel && (
+              <ReferenceLine x={activeLabel} stroke="#a855f7" strokeDasharray="4 4" />
+            )}
             
             {/* Main line */}
             <Line

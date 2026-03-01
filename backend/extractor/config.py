@@ -17,7 +17,7 @@ class Settings:
         # File retention (cleanup)
         self.FILE_RETENTION_HOURS = int(os.getenv("FILE_RETENTION_HOURS", "24"))
         
-        # yt-dlp specific settings
+        # Optional ffmpeg path for local tooling
         self.FFMPEG_PATH = os.getenv("FFMPEG_PATH", None)
         
         # Download timeout settings

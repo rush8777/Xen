@@ -19,6 +19,7 @@ from ..services.rag_chat_service import RagChatService
 
 
 router = APIRouter(prefix="/api", tags=["chats"])
+_ALLOWED_COURSE_TEMPLATES = {"default", "sonos_typo", "pixel_brutalist", "brand_guides"}
 
 
 # Pydantic schemas
@@ -179,7 +180,7 @@ def _build_stored_assistant_content(
         return summary
     payload = {
         "course_data": course_data,
-        "course_template": course_template or "default",
+        "course_template": course_template or "sonos_typo",
     }
     encoded = base64.urlsafe_b64encode(
         json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -567,7 +568,9 @@ async def send_message(payload: ChatSendMessageRequest, db: Session = Depends(ge
     course_clarification_questions: list[dict] = []
     try:
         provided_clarification_answers = payload.course_clarification_answers or {}
-        course_template = str(provided_clarification_answers.get("course_template") or "default")
+        course_template = str(provided_clarification_answers.get("course_template") or "sonos_typo").strip().lower()
+        if course_template not in _ALLOWED_COURSE_TEMPLATES:
+            course_template = "sonos_typo"
         intent = await rag.detect_course_intent_async(
             project=project,
             messages=history,
@@ -773,7 +776,9 @@ def send_message_stream(payload: ChatSendMessageRequest, db: Session = Depends(g
 
     try:
         provided_clarification_answers = payload.course_clarification_answers or {}
-        course_template = str(provided_clarification_answers.get("course_template") or "default")
+        course_template = str(provided_clarification_answers.get("course_template") or "sonos_typo").strip().lower()
+        if course_template not in _ALLOWED_COURSE_TEMPLATES:
+            course_template = "sonos_typo"
         loop = asyncio.new_event_loop()
         try:
             intent = loop.run_until_complete(

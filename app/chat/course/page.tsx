@@ -3,18 +3,22 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import TeachCanvasKit from "@/components/teach-canvas-kit-component/TeachCanvasKit"
 import type { CourseSlides } from "@/components/teach-canvas-kit-component/data/courseData"
 import SonosTypoCourse from "@/components/teach-canvas-kit-component/SonosTypoCourse"
-import PixelBrutalistCourse from "@/components/teach-canvas-kit-component/PixelBrutalistCourse"
 
-type CourseTemplateId = "default" | "sonos_typo" | "pixel_brutalist"
+type CourseTemplateId = "sonos_typo"
+type CoursePayload =
+  | CourseSlides
+  | {
+      brand?: { name?: string }
+      slides?: any[]
+      courseTitle?: string
+    }
 
 export default function CoursePage() {
   const searchParams = useSearchParams()
   const courseKey = searchParams.get("courseKey")
-  const [courseData, setCourseData] = useState<CourseSlides | null>(null)
-  const [courseTemplate, setCourseTemplate] = useState<CourseTemplateId>("default")
+  const [courseData, setCourseData] = useState<CoursePayload | null>(null)
 
   const storageKey = useMemo(() => {
     if (!courseKey) return null
@@ -33,34 +37,31 @@ export default function CoursePage() {
         return
       }
       const parsed = JSON.parse(raw) as
-        | CourseSlides
-        | { courseData?: CourseSlides; template?: CourseTemplateId }
+        | CoursePayload
+        | { courseData?: CoursePayload; template?: CourseTemplateId }
 
       const wrappedData =
         parsed && typeof parsed === "object" && "courseData" in parsed
           ? parsed.courseData
           : (parsed as CourseSlides)
-      const wrappedTemplate =
-        parsed && typeof parsed === "object" && "template" in parsed
-          ? parsed.template
-          : "default"
 
       if (!wrappedData) {
         setCourseData(null)
         return
       }
 
-      if (
-        typeof wrappedData.courseTitle === "string" &&
-        Array.isArray(wrappedData.slides) &&
-        wrappedData.slides.length > 0
-      ) {
+      const hasSlides = Array.isArray((wrappedData as any).slides) && (wrappedData as any).slides.length > 0
+      const hasCourseTitle =
+        typeof (wrappedData as any).courseTitle === "string" &&
+        (wrappedData as any).courseTitle.trim().length > 0
+      const hasBrandName =
+        !!(wrappedData as any).brand &&
+        typeof (wrappedData as any).brand === "object" &&
+        typeof (wrappedData as any).brand.name === "string" &&
+        (wrappedData as any).brand.name.trim().length > 0
+
+      if (hasSlides && (hasCourseTitle || hasBrandName)) {
         setCourseData(wrappedData)
-        setCourseTemplate(
-          wrappedTemplate === "sonos_typo" || wrappedTemplate === "pixel_brutalist"
-            ? wrappedTemplate
-            : "default"
-        )
       } else {
         setCourseData(null)
       }
@@ -89,13 +90,7 @@ export default function CoursePage() {
         <div className="flex-1 p-0">
           {courseData ? (
             <div className="h-full overflow-hidden border border-white/10 bg-black/30 shadow-[0_25px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-              {courseTemplate === "sonos_typo" ? (
-                <SonosTypoCourse courseData={courseData as any} className="h-full" />
-              ) : courseTemplate === "pixel_brutalist" ? (
-                <PixelBrutalistCourse courseData={courseData as any} className="h-full" />
-              ) : (
-                <TeachCanvasKit courseData={courseData} className="h-full" />
-              )}
+              <SonosTypoCourse courseData={courseData as any} className="h-full" />
             </div>
           ) : (
             <div className="flex h-full items-center justify-center border border-dashed border-zinc-700/80 bg-black/30">

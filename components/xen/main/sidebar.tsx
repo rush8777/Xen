@@ -13,13 +13,13 @@ import {
   Plus,
   ChevronDown,
   Clock,
-  PanelLeftClose,
-  PanelLeft,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 
 import Link from "next/link"
-import Image from "next/image"
 import { useSidebarContext } from "./layout"
+import SettingsModal from "./settings-modal"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 
@@ -45,9 +45,11 @@ interface RecentChat {
 export default function Sidebar() {
   const [isRecentsOpen, setIsRecentsOpen] = useState(true)
   const { isSidebarExpanded, setIsSidebarExpanded } = useSidebarContext()
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [recentChats, setRecentChats] = useState<RecentChat[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+  const [isHoveringCollapsed, setIsHoveringCollapsed] = useState(false)
 
   const formatTimeAgo = useCallback((dateString: string) => {
     const date = new Date(dateString)
@@ -135,20 +137,52 @@ export default function Sidebar() {
     icon: Icon,
     children,
     badge,
+    onClick,
   }: {
-    href: string
+    href?: string
     icon: any
     children: React.ReactNode
     badge?: string
+    onClick?: () => void
   }) {
+    const [isHovered, setIsHovered] = useState(false);
+
+    const baseClass = `group flex items-center gap-1 rounded-lg transition-all duration-200 ${
+      isSidebarExpanded 
+        ? "px-2 py-2 hover:bg-white/5" 
+        : "px-2 py-2 justify-center hover:bg-white/5 relative"
+    }`
+
+    if (onClick) {
+      return (
+        <button 
+          type="button" 
+          onClick={onClick} 
+          className={`${baseClass} w-full`}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
+          <Icon className="h-3 w-3 text-zinc-400 group-hover:text-white transition-colors" />
+          {isSidebarExpanded && (
+            <span className="text-xs font-medium text-zinc-300 group-hover:text-white transition-colors flex-1 text-left">
+              {children}
+            </span>
+          )}
+          {!isSidebarExpanded && isHovered && (
+            <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-800 text-white text-xs rounded-md whitespace-nowrap z-50 border border-zinc-700">
+              {children}
+            </div>
+          )}
+        </button>
+      )
+    }
+
     return (
       <Link
-        href={href}
-        className={`group flex items-center gap-1 rounded-lg transition-all duration-200 ${
-          isSidebarExpanded 
-            ? "px-2 py-2 hover:bg-white/5" 
-            : "px-2 py-2 justify-center hover:bg-white/5"
-        }`}
+        href={href || "#"}
+        className={baseClass}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
         <Icon className="h-3 w-3 text-zinc-400 group-hover:text-white transition-colors" />
         {isSidebarExpanded && (
@@ -156,10 +190,10 @@ export default function Sidebar() {
             {children}
           </span>
         )}
-        {isSidebarExpanded && badge && (
-          <span className="px-1 py-0.5 text-[10px] font-semibold bg-zinc-800 text-zinc-300 rounded-full">
-            {badge}
-          </span>
+        {!isSidebarExpanded && isHovered && (
+          <div className="absolute left-full ml-2 px-2 py-1 bg-zinc-800 text-white text-xs rounded-md whitespace-nowrap z-50 border border-zinc-700">
+            {children}
+          </div>
         )}
       </Link>
     )
@@ -176,7 +210,6 @@ export default function Sidebar() {
         }`}
         title={chat.heading}
       >
-        <div className="h-1 w-1 rounded-full bg-zinc-600 flex-shrink-0" />
         {isSidebarExpanded && (
           <div className="flex-1 min-w-0">
             <p className="text-xs text-zinc-400 group-hover:text-white truncate transition-colors">
@@ -198,36 +231,36 @@ export default function Sidebar() {
       }`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between h-10 px-2 border-b border-zinc-800/50">
-        {isSidebarExpanded ? (
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="h-5 w-5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-              <span className="text-white font-bold text-xs">SC</span>
-            </div>
-            <div>
-              <h2 className="text-xs font-semibold text-white">SocialCraft</h2>
-              <p className="text-[10px] text-zinc-500">Dashboard</p>
-            </div>
-          </Link>
-        ) : (
-          <div className="h-5 w-5 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto">
-            <span className="text-white font-bold text-xs">SC</span>
-          </div>
-        )}
-        
+      <div className={`flex items-center h-10 px-2 ${!isSidebarExpanded ? 'justify-center' : 'justify-between'}`}>
+        <button
+          type="button"
+          onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+          className="hover:bg-zinc-800/50 rounded-lg p-1 transition-colors"
+          aria-label="Toggle sidebar"
+          title="Toggle sidebar"
+        >
+          <img 
+            src={isSidebarExpanded ? "/images/icons/logo_full'.png" : "/images/icons/logo.png"} 
+            alt="SocialCraft" 
+            className="h-6 w-auto" 
+          />
+        </button>
         {isSidebarExpanded && (
           <button
-            onClick={() => setIsSidebarExpanded(false)}
-            className="p-1 hover:bg-zinc-800 rounded-lg transition-colors text-zinc-400 hover:text-white"
+            type="button"
+            onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+            className="hover:bg-zinc-800/50 rounded-lg p-1 transition-colors"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
           >
-            <PanelLeftClose className="h-2.5 w-2.5" />
+            <ChevronLeft className="h-4 w-4 text-zinc-400 hover:text-white transition-colors" />
           </button>
         )}
       </div>
 
       {/* Search Bar */}
       {isSidebarExpanded && (
-        <div className="px-3 py-2 border-b border-zinc-800/50">
+        <div className="px-3 py-2">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-zinc-500" />
             <input
@@ -238,18 +271,6 @@ export default function Sidebar() {
               className="w-full pl-7 pr-2 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-xs text-zinc-300 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
             />
           </div>
-        </div>
-      )}
-
-      {/* Expand Button (collapsed state) */}
-      {!isSidebarExpanded && (
-        <div className="px-3 py-2 border-b border-zinc-800/50">
-          <button
-            onClick={() => setIsSidebarExpanded(true)}
-            className="w-full p-1.5 hover:bg-zinc-800 rounded-lg transition-colors text-zinc-400 hover:text-white"
-          >
-            <PanelLeft className="h-3.5 w-3.5 mx-auto" />
-          </button>
         </div>
       )}
 
@@ -325,19 +346,9 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* New Project Button */}
-      {isSidebarExpanded && (
-        <div className="px-3 py-2 border-t border-zinc-800/50">
-          <button className="w-full flex items-center justify-center gap-1 px-2 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-lg font-medium text-xs transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30">
-            <Plus className="h-3 w-3" />
-            New Project
-          </button>
-        </div>
-      )}
-
       {/* Footer */}
-      <div className="px-2 py-1.5 border-t border-zinc-800/50 space-y-1">
-        <NavItem href="#" icon={Settings}>
+      <div className="px-2 py-1.5 space-y-1">
+        <NavItem icon={Settings} onClick={() => setIsSettingsOpen(true)}>
           Settings
         </NavItem>
         <NavItem href="#" icon={HelpCircle}>
@@ -347,7 +358,7 @@ export default function Sidebar() {
 
       {/* User Profile */}
       {isSidebarExpanded && (
-        <div className="px-3 py-2 border-t border-zinc-800/50">
+        <div className="px-3 py-2">
           <div className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-zinc-800/50 transition-colors cursor-pointer">
             <div className="h-6 w-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
               <span className="text-white font-semibold text-xs">JD</span>
@@ -359,6 +370,7 @@ export default function Sidebar() {
           </div>
         </div>
       )}
+      <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </aside>
   )
 }

@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.database import Base
 from backend.dependencies import get_db
-from backend.models import Project, ProjectContentFeatures, User
+from backend.models import PremiumTranscriptInterval, Project, ProjectContentFeatures, User
 from backend.routers import project_content_features
 
 
@@ -102,7 +102,24 @@ def test_feature_endpoint_returns_completed_payload():
         record = ProjectContentFeatures(
             project_id=project.id,
             clips_status="completed",
-            clips_json=json.dumps({"clips": [{"id": "clip_1"}]}),
+            clips_json=json.dumps(
+                {
+                    "key_moments": [
+                        {
+                            "id": "moment_1",
+                            "title": "Breakthrough Insight",
+                            "category": "critical_insight",
+                            "start_time_seconds": 12,
+                            "end_time_seconds": 33,
+                            "duration_seconds": 21,
+                            "justification": "This reframes the entire argument with concrete evidence.",
+                            "impact_level": "high",
+                            "context": "After setup",
+                            "key_quote": "The pivot starts here.",
+                        }
+                    ]
+                }
+            ),
         )
         db.add(record)
         db.commit()
@@ -111,7 +128,64 @@ def test_feature_endpoint_returns_completed_payload():
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "completed"
-    assert data["payload"]["clips"][0]["id"] == "clip_1"
+    assert data["payload"]["key_moments"][0]["id"] == "moment_1"
+
+
+def test_feature_endpoint_returns_completed_chapters_hierarchical_payload():
+    client, SessionLocal = _build_client()
+    with SessionLocal() as db:
+        project = _seed_project(db)
+        project_id = project.id
+        record = ProjectContentFeatures(
+            project_id=project.id,
+            chapters_status="completed",
+            chapters_json=json.dumps(
+                {
+                    "totalChapters": 1,
+                    "chapters": [
+                        {
+                            "id": "chapter_1",
+                            "title": "Proof Progression",
+                            "start_time_seconds": 0,
+                            "end_time_seconds": 60,
+                            "duration_seconds": 60,
+                            "summary": "The section establishes a claim, supports it with concrete evidence, and transitions toward a practical conclusion.",
+                            "psychological_intent": "deliver_proof",
+                            "chapter_type": "Demonstration",
+                            "subchapters": [
+                                {
+                                    "id": "chapter_1_sub_1",
+                                    "title": "Claim setup",
+                                    "start_time_seconds": 0,
+                                    "end_time_seconds": 24,
+                                    "duration_seconds": 24,
+                                    "summary": "The speaker introduces the claim boundaries and expected outcome with enough context for interpretation.",
+                                },
+                                {
+                                    "id": "chapter_1_sub_2",
+                                    "title": "Demonstration",
+                                    "start_time_seconds": 24,
+                                    "end_time_seconds": 60,
+                                    "duration_seconds": 36,
+                                    "summary": "The speaker delivers concrete evidence and explains why it supports the claim under real constraints.",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ),
+        )
+        db.add(record)
+        db.commit()
+
+    res = client.get(f"/api/projects/{project_id}/content-features/chapters")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "completed"
+    assert data["payload"]["totalChapters"] == 1
+    assert data["payload"]["chapters"][0]["psychological_intent"] == "deliver_proof"
+    assert data["payload"]["chapters"][0]["chapter_type"] == "Demonstration"
+    assert len(data["payload"]["chapters"][0]["subchapters"]) == 2
 
 
 def test_feature_endpoint_returns_400_when_not_ready():
@@ -164,3 +238,81 @@ def test_subtitles_export_srt_and_vtt():
     vtt = vtt_res.json()
     assert vtt["filename"].endswith(".vtt")
     assert vtt["content"].startswith("WEBVTT")
+
+
+def test_generate_single_feature_starts_background_job(monkeypatch):
+    client, SessionLocal = _build_client()
+    with SessionLocal() as db:
+        project = _seed_project(db)
+
+    async def fake_generate_feature(project_id: int, feature_id: str, force: bool = False):
+        return None
+
+    monkeypatch.setattr(project_content_features.generator, "generate_feature", fake_generate_feature)
+    res = client.post(
+        f"/api/projects/{project.id}/content-features/clips/generate",
+        json={"force": False},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["triggered"] is True
+    assert data["status"] == "loading"
+
+
+def test_generate_single_feature_idempotent_while_processing(monkeypatch):
+    client, SessionLocal = _build_client()
+    with SessionLocal() as db:
+        project = _seed_project(db)
+        project_id = project.id
+        record = ProjectContentFeatures(project_id=project.id, clips_status="processing")
+        db.add(record)
+        db.commit()
+
+    async def fake_generate_feature(project_id: int, feature_id: str, force: bool = False):
+        raise AssertionError("should not be called")
+
+    monkeypatch.setattr(project_content_features.generator, "generate_feature", fake_generate_feature)
+    res = client.post(
+        f"/api/projects/{project_id}/content-features/clips/generate",
+        json={"force": False},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["triggered"] is False
+
+
+def test_transcript_passage_prefers_premium_transcript_table():
+    client, SessionLocal = _build_client()
+    with SessionLocal() as db:
+        project = _seed_project(db)
+        project_id = project.id
+        db.add(
+            PremiumTranscriptInterval(
+                project_id=project_id,
+                video_id=project.video_id or 1,
+                interval_id=1,
+                interval_index=0,
+                start_time_seconds=0,
+                end_time_seconds=20,
+                transcript_text="Welcome everyone to this session.",
+            )
+        )
+        db.add(
+            PremiumTranscriptInterval(
+                project_id=project_id,
+                video_id=project.video_id or 1,
+                interval_id=2,
+                interval_index=1,
+                start_time_seconds=20,
+                end_time_seconds=40,
+                transcript_text="Today we will cover the core strategy.",
+            )
+        )
+        db.commit()
+
+    res = client.get(f"/api/projects/{project_id}/transcript-passage")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["source"] == "premium_transcript_table"
+    assert len(data["segments"]) == 2
+    assert "Welcome everyone" in data["passage"]

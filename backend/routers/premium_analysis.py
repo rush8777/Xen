@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
+import logging
+from threading import Thread
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..dependencies import get_db
 from ..models import Project, ProjectPremiumAnalysis
-from ..services.premium_analysis_service import generate_premium_analysis_for_project
+from ..services.task_queue import QueueConfigurationError, enqueue_premium_generation
+from ..services.worker_tasks import run_premium_task
 
 router = APIRouter(prefix="/api/projects", tags=["premium-analysis"])
+logger = logging.getLogger(__name__)
 
 
 class PremiumAnalysisStatusResponse(BaseModel):
@@ -92,13 +96,26 @@ def trigger_premium_analysis(
             "message": "Premium analysis has already been completed for this project.",
         }
 
-    # Launch background task
-    asyncio.create_task(generate_premium_analysis_for_project(project_id))
-
     project.premium_analysis_status = "pending"
     project.premium_analysis_started_at = datetime.utcnow()
     project.premium_analysis_error = None
     db.commit()
+
+    if settings.TASKS_MODE == "cloud_tasks":
+        try:
+            enqueue_premium_generation(project_id=project_id)
+        except QueueConfigurationError as exc:
+            logger.warning(
+                "Cloud Tasks unavailable for premium project %s; falling back to local thread: %s",
+                project_id,
+                exc,
+            )
+            Thread(target=run_premium_task, kwargs={"project_id": project_id}, daemon=True).start()
+        except Exception as exc:
+            logger.exception("Failed to enqueue premium task for project %s", project_id)
+            raise HTTPException(status_code=500, detail=f"Failed to enqueue premium task: {exc}")
+    else:
+        Thread(target=run_premium_task, kwargs={"project_id": project_id}, daemon=True).start()
 
     return {
         "project_id": project_id,

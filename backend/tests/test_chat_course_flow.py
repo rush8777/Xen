@@ -205,18 +205,31 @@ def test_course_intent_true_returns_course_payload(monkeypatch):
     async def fake_generate(self, **kwargs):
         return ("Generated course summary", _valid_course_payload(), True, 1, ["ctx"])
 
+    async def fake_clarification(self, **kwargs):
+        return {"needs_clarification": False, "assistant_message": "", "questions": []}
+
     monkeypatch.setattr("backend.services.rag_chat_service.RagChatService.detect_course_intent_async", fake_detect)
     monkeypatch.setattr("backend.services.rag_chat_service.RagChatService.generate_course_async", fake_generate)
+    monkeypatch.setattr(
+        "backend.services.rag_chat_service.RagChatService.plan_course_clarification_async",
+        fake_clarification,
+    )
 
     response = client.post(
         "/api/chats/send-message",
-        json={"chat_id": chat_id, "message": "Create me a course to improve retention", "user_id": 1},
+        json={
+            "chat_id": chat_id,
+            "message": "Create me a course to improve retention",
+            "user_id": 1,
+            "course_mode_enabled": True,
+        },
     )
     assert response.status_code == 200
     body = response.json()
     assert body["course_generated"] is True
     assert body["course_summary"] == "Generated course summary"
     assert body["course_data"]["courseTitle"] == "Hook Optimization Course"
+    assert body["course_template"] == "sonos_typo"
 
 
 def test_invalid_course_json_falls_back_to_text_response(monkeypatch):
@@ -238,13 +251,20 @@ def test_invalid_course_json_falls_back_to_text_response(monkeypatch):
     async def fake_reply(self, **kwargs):
         return ("Fallback reply", False, 0, [])
 
+    async def fake_clarification(self, **kwargs):
+        return {"needs_clarification": False, "assistant_message": "", "questions": []}
+
     monkeypatch.setattr("backend.services.rag_chat_service.RagChatService.detect_course_intent_async", fake_detect)
     monkeypatch.setattr("backend.services.rag_chat_service.RagChatService.generate_course_async", fake_generate)
     monkeypatch.setattr("backend.services.rag_chat_service.RagChatService.generate_reply_async", fake_reply)
+    monkeypatch.setattr(
+        "backend.services.rag_chat_service.RagChatService.plan_course_clarification_async",
+        fake_clarification,
+    )
 
     response = client.post(
         "/api/chats/send-message",
-        json={"chat_id": chat_id, "message": "Teach me", "user_id": 1},
+        json={"chat_id": chat_id, "message": "Teach me", "user_id": 1, "course_mode_enabled": True},
     )
     assert response.status_code == 200
     body = response.json()
@@ -269,12 +289,24 @@ def test_stream_done_includes_course_fields_when_generated(monkeypatch):
     async def fake_generate(self, **kwargs):
         return ("Stream course summary", _valid_course_payload(), True, 2, ["c1", "c2"])
 
+    async def fake_clarification(self, **kwargs):
+        return {"needs_clarification": False, "assistant_message": "", "questions": []}
+
     monkeypatch.setattr("backend.services.rag_chat_service.RagChatService.detect_course_intent_async", fake_detect)
     monkeypatch.setattr("backend.services.rag_chat_service.RagChatService.generate_course_async", fake_generate)
+    monkeypatch.setattr(
+        "backend.services.rag_chat_service.RagChatService.plan_course_clarification_async",
+        fake_clarification,
+    )
 
     response = client.post(
         "/api/chats/send-message-stream",
-        json={"chat_id": chat_id, "message": "Build a course for this video", "user_id": 1},
+        json={
+            "chat_id": chat_id,
+            "message": "Build a course for this video",
+            "user_id": 1,
+            "course_mode_enabled": True,
+        },
     )
     assert response.status_code == 200
 
@@ -294,3 +326,14 @@ def test_stream_done_includes_course_fields_when_generated(monkeypatch):
     assert done_payload["course_generated"] is True
     assert done_payload["course_summary"] == "Stream course summary"
     assert done_payload["course_data"]["courseTitle"] == "Hook Optimization Course"
+    assert done_payload["course_template"] == "sonos_typo"
+
+
+def test_stored_assistant_course_template_defaults_to_sonos():
+    content = chats._build_stored_assistant_content(
+        summary="summary",
+        course_data=_valid_course_payload(),
+        course_template=None,
+    )
+    assert "COURSE_PAYLOAD_V1" in content
+    assert "summary" in content

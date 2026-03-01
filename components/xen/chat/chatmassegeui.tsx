@@ -16,7 +16,7 @@ interface ChatMessageProps {
   ragActive?: boolean;
   contextChunksUsed?: number;
   courseAvailable?: boolean;
-  courseTemplate?: "default" | "sonos_typo" | "pixel_brutalist";
+  courseTemplate?: "default" | "sonos_typo" | "pixel_brutalist" | "brand_guides";
   onOpenCourse?: () => void;
 }
 
@@ -161,7 +161,7 @@ const ChatMessage = ({
   ragActive,
   contextChunksUsed,
   courseAvailable = false,
-  courseTemplate = "default",
+  courseTemplate = "sonos_typo",
   onOpenCourse,
 }: ChatMessageProps) => {
   const [animatedContent, setAnimatedContent] = useState(content);
@@ -250,6 +250,8 @@ const ChatMessage = ({
                     ? "SonosTypoCourse"
                     : courseTemplate === "pixel_brutalist"
                     ? "PixelBrutalistCourse"
+                    : courseTemplate === "brand_guides"
+                    ? "BrandGuidesCourse"
                     : "TeachCanvasKitCourse"}
                 </div>
                 <div className="text-xs text-zinc-400">Course Template • TSX</div>
@@ -298,12 +300,7 @@ export const ChatLayout = () => (
   <div className="min-h-screen bg-zinc-950 flex flex-col">
     <TopBar />
     <div className="flex-1 px-6 py-6">
-      <ChatMessage content="How does the new model compare to GPT-4?" isUser={true} />
-      <ChatMessage
-        content="The new model introduces several architectural improvements over GPT-4, including a more efficient attention mechanism and better long-context handling. Benchmarks show roughly 18% gains on reasoning tasks while maintaining similar inference latency."
-        isUser={false}
-        showActions={true}
-      />
+      {/* Chat messages will appear here when the app is running */}
     </div>
   </div>
 );

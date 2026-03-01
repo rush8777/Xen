@@ -28,7 +28,7 @@ MAX_CONTEXT_CHUNKS = 10
 
 # Rough character budget for injected context (keeps us well within token limits)
 MAX_CONTEXT_CHARS = 100000
-MAX_COURSE_SLIDES = 12
+MAX_COURSE_SLIDES = 30
 MIN_COURSE_SLIDES = 6
 
 
@@ -500,9 +500,15 @@ class RagChatService:
         )
 
         context_blob = "\n\n".join(context_chunks) if context_chunks else ""
-        template = str((course_requirements or {}).get("course_template") or "default").strip().lower()
-        if template not in {"default", "sonos_typo", "pixel_brutalist"}:
-            template = "default"
+        template = str((course_requirements or {}).get("course_template") or "sonos_typo").strip().lower()
+        if template not in {"default", "sonos_typo", "pixel_brutalist", "brand_guides"}:
+            template = "sonos_typo"
+        content_profile = self._build_course_content_profile(
+            user_message=user_message,
+            goal=goal,
+            course_requirements=course_requirements or {},
+            recent_messages=messages[-8:],
+        )
 
         course_prompt = (
             "You are an expert video growth educator.\n"
@@ -530,9 +536,13 @@ class RagChatService:
             "  }\n"
             "}\n"
             "Constraints:\n"
-            "- 6 to 12 slides.\n"
+            "- Generate 6 to 30 slides.\n"
+            "- Use content_profile.recommended_slide_count as the baseline, and expand depth when needed.\n"
+            "- For comprehensive/professional requests, prefer 18 to 30 slides when the topic scope supports it.\n"
             "- Include at least 1 checklist slide with concrete action items.\n"
             "- Include at least 1 quiz slide for reinforcement.\n"
+            "- Adapt slide depth and text density based on content_profile. Avoid uniform fixed-size slides.\n"
+            "- Break large topics into multiple sequential slides/sections when needed (do not compress everything into one slide).\n"
             "- Recommendations should optimize retention, hook strength, views, likes, engagement when relevant.\n"
             "- Keep language practical and specific.\n"
             "- If project context is limited, still produce a useful course and mention data limitations in summary.\n"
@@ -559,8 +569,8 @@ class RagChatService:
             '        "items": ["string"] | [{"text":"string","checked":boolean}]?,\n'
             '        "paragraphs": ["string"]?,\n'
             '        "body": "string?",\n'
-            '        "columns": [{"heading":"string","body":"string"}]?,\n'
-            '        "cards": [{"heading":"string","description":"string"}]?,\n'
+            '        "columns": [{"heading":"string?","body":"string?","description":"string?","title":"string?","text":"string?"}]?,\n'
+            '        "cards": [{"heading":"string?","description":"string?","title":"string?","body":"string?","text":"string?"}]?,\n'
             '        "lines": ["string"]?,\n'
             '        "quizQuestion": "string?",\n'
             '        "quizOptions": ["string"]?,\n'
@@ -570,11 +580,53 @@ class RagChatService:
             "  }\n"
             "}\n"
             "Constraints:\n"
-            "- Generate 6 to 12 slides.\n"
+            "- Generate 6 to 30 slides.\n"
+            "- Use content_profile.recommended_slide_count as the baseline, and expand depth when needed.\n"
+            "- For comprehensive/professional requests, prefer 18 to 30 slides when the topic scope supports it.\n"
             "- Include at least 1 checklist and 1 quiz slide.\n"
             "- Include at least 1 columns or cards slide with concrete tactics.\n"
-            "- Use Sonos-appropriate concise typography-first text blocks.\n"
+            "- For each columns/cards slide, choose the number of blocks dynamically from content complexity (usually 2 to 4); do not force a fixed count.\n"
+            "- Avoid sparse middle columns: if you include a middle block, give it substantive copy similar depth to neighboring blocks.\n"
+            "- Do not use placeholder one-word bodies; each block should have a practical paragraph (typically 1 to 3 sentences).\n"
+            "- Use Sonos-appropriate typography-first text blocks, but vary density per content_profile.\n"
+            "- Avoid forcing fixed-length copy blocks across all slides.\n"
+            "- Break large topics into multiple sequential slides/sections when needed (do not compress everything into one slide).\n"
             "- Keep recommendations practical and tied to retention/hook/views/engagement.\n"
+        )
+        brand_guides_prompt = (
+            "You are designing a BrandGuidesCourse native deck.\n"
+            "Return strict JSON only with keys:\n"
+            "{\n"
+            '  "course_summary": "string",\n'
+            '  "course_data": {\n'
+            '    "brand": {\n'
+            '      "name": "string",\n'
+            '      "accent": "hex color like #FF6B00",\n'
+            '      "navLinks": ["string"],\n'
+            '      "year": "string",\n'
+            '      "version": "string"\n'
+            "    },\n"
+            '    "slides": [\n'
+            "      {\n"
+            '        "type": "cover|intro|toc|logo-grid|clear-space|logo-detail|typography|palette|logo-misuse|section",\n'
+            '        "title": "string?",\n'
+            '        "body": "string?",\n'
+            '        "items": [{"number": number, "label": "string"}]?,\n'
+            '        "rules": [{"type":"do|dont","text":"string"}]?,\n'
+            '        "swatches": [{"name":"string","hex":"#RRGGBB","cmyk":"string?","rgb":"string?","width": number?}]?\n'
+            "      }\n"
+            "    ]\n"
+            "  }\n"
+            "}\n"
+            "Constraints:\n"
+            "- Generate 6 to 30 slides.\n"
+            "- Use content_profile.recommended_slide_count as the baseline, and expand depth when needed.\n"
+            "- For comprehensive/professional requests, prefer 18 to 30 slides when the topic scope supports it.\n"
+            "- Include at least one 'toc' slide and one 'palette' slide.\n"
+            "- Include at least one 'logo-misuse' or 'clear-space' governance slide.\n"
+            "- Adapt detail level from content_profile (light/balanced/deep) instead of fixed-size sections.\n"
+            "- Break large topics into multiple sequential slides/sections when needed (do not compress everything into one slide).\n"
+            "- Keep copy concise, practical, and creator-focused.\n"
         )
 
         recent_messages: list[dict[str, str]] = []
@@ -592,6 +644,7 @@ class RagChatService:
             "course_requirements": course_requirements or {},
             "retrieved_context": context_blob[:MAX_CONTEXT_CHARS],
             "course_template": template,
+            "content_profile": content_profile,
         }
 
         loop = asyncio.get_running_loop()
@@ -601,7 +654,13 @@ class RagChatService:
                 model=self.model,
                 contents=[json.dumps(course_input, ensure_ascii=False)],
                 config=types.GenerateContentConfig(
-                    system_instruction=sonos_prompt if template == "sonos_typo" else course_prompt,
+                    system_instruction=(
+                        sonos_prompt
+                        if template == "sonos_typo"
+                        else brand_guides_prompt
+                        if template == "brand_guides"
+                        else course_prompt
+                    ),
                     temperature=0.4,
                     response_mime_type="application/json",
                 ),
@@ -614,6 +673,8 @@ class RagChatService:
         course_summary = str(payload.get("course_summary") or "").strip()
         if template == "sonos_typo":
             course_data = self._sanitize_sonos_course_payload(payload.get("course_data"))
+        elif template == "brand_guides":
+            course_data = self._sanitize_brand_guides_payload(payload.get("course_data"))
         else:
             course_data = self._sanitize_course_payload(payload.get("course_data"))
         if not course_data:
@@ -670,11 +731,12 @@ class RagChatService:
             '  "reasoning_brief": "short string"\n'
             "}\n"
             "Guidelines:\n"
-            "- Ask 2 to 6 questions when clarification is needed.\n"
+            "- Ask 2 to 4 questions when clarification is needed.\n"
             "- Prefer compact multiple-choice questions (single_choice or multi_choice).\n"
             "- Keep options short and scannable (usually 3 to 6 options).\n"
             "- Use short_text only when options cannot cover the likely answers.\n"
-            "- Questions can include scope, topics, audience level, desired slide count, tone, constraints, examples.\n"
+            "- Ask only essential questions that materially improve course quality.\n"
+            "- Questions can include scope, topics, audience level, desired depth, tone, constraints, examples.\n"
             "- If info is already sufficient, set needs_clarification=false and return an empty questions array.\n"
             "- assistant_message should be concise and user-facing.\n"
             "- required should be true only when essential for quality.\n"
@@ -707,7 +769,7 @@ class RagChatService:
             questions_raw = payload.get("questions")
             questions: list[dict[str, Any]] = []
             if isinstance(questions_raw, list):
-                for idx, q in enumerate(questions_raw[:6]):
+                for idx, q in enumerate(questions_raw[:4]):
                     if not isinstance(q, dict):
                         continue
                     qid = self._normalize_text(q.get("id"), 40).lower().replace(" ", "_")
@@ -1177,6 +1239,110 @@ class RagChatService:
             return None
         return None
 
+    def _build_course_content_profile(
+        self,
+        *,
+        user_message: str,
+        goal: str,
+        course_requirements: dict[str, Any],
+        recent_messages: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        joined = " ".join(
+            [
+                str(user_message or ""),
+                str(goal or ""),
+                " ".join(str((m or {}).get("content") or "") for m in recent_messages[-6:]),
+                " ".join(f"{k}:{v}" for k, v in (course_requirements or {}).items()),
+            ]
+        ).lower()
+
+        if any(k in joined for k in ("brand", "logo", "palette", "guideline", "typography")):
+            content_type = "brand_guidelines"
+        elif any(k in joined for k in ("technical", "spec", "framework", "api", "documentation")):
+            content_type = "technical"
+        elif any(k in joined for k in ("pitch", "presentation", "deck", "stakeholder", "exec")):
+            content_type = "presentation"
+        else:
+            content_type = "educational"
+
+        deep_signals = (
+            "advanced",
+            "comprehensive",
+            "deep",
+            "detailed",
+            "step-by-step",
+            "full",
+            "professional",
+            "complete course",
+            "in-depth",
+            "indepth",
+            "masterclass",
+        )
+        light_signals = ("quick", "brief", "short", "summary", "overview")
+        if any(k in joined for k in deep_signals):
+            density_target = "deep"
+        elif any(k in joined for k in light_signals):
+            density_target = "light"
+        else:
+            density_target = "balanced"
+
+        requested_slide_count = self._extract_requested_slide_count(joined)
+        if density_target == "deep":
+            complexity = "complex"
+            slide_count = 20
+        elif density_target == "light":
+            complexity = "simple"
+            slide_count = 8
+        else:
+            complexity = "medium"
+            slide_count = 12
+
+        # Context-rich requests can sustain larger, more complete course structures.
+        if len(joined) > 1800:
+            slide_count += 4
+        if any(token in joined for token in ("full curriculum", "complete", "all modules", "end-to-end")):
+            slide_count += 4
+
+        if requested_slide_count is not None:
+            slide_count = requested_slide_count
+
+        if content_type == "brand_guidelines":
+            slide_mix = {"cover": 1, "intro": 1, "toc": 1, "typography": 1, "palette": 1, "logo-misuse": 1}
+        elif content_type == "technical":
+            slide_mix = {"cover": 1, "overview": 2, "columns": 2, "checklist": 1, "quiz": 1}
+        elif content_type == "presentation":
+            slide_mix = {"cover": 1, "statement": 1, "contents": 1, "highlights": 2, "checklist": 1, "quiz": 1}
+        else:
+            slide_mix = {"cover": 1, "overview": 2, "columns": 1, "cards": 1, "checklist": 1, "quiz": 1}
+
+        return {
+            "content_type": content_type,
+            "complexity": complexity,
+            "density_target": density_target,
+            "recommended_slide_count": max(MIN_COURSE_SLIDES, min(MAX_COURSE_SLIDES, slide_count)),
+            "recommended_mix": slide_mix,
+        }
+
+    def _extract_requested_slide_count(self, text: str) -> Optional[int]:
+        if not text:
+            return None
+
+        patterns = (
+            r"\b(\d{1,2})\s*(?:slides?|pages?)\b",
+            r"\b(?:slides?|pages?)\s*(?:of|around|about)?\s*(\d{1,2})\b",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+            try:
+                value = int(match.group(1))
+            except Exception:
+                continue
+            if value >= MIN_COURSE_SLIDES:
+                return max(MIN_COURSE_SLIDES, min(MAX_COURSE_SLIDES, value))
+        return None
+
     def _sanitize_course_payload(self, raw: Any) -> Optional[dict[str, Any]]:
         if not isinstance(raw, dict):
             return None
@@ -1411,8 +1577,11 @@ class RagChatService:
                 for col in columns_raw[:6]:
                     if not isinstance(col, dict):
                         continue
-                    heading = self._normalize_text(col.get("heading"), 100)
-                    body = self._normalize_text(col.get("body"), 500)
+                    heading = self._normalize_text(col.get("heading") or col.get("title"), 100)
+                    body = self._normalize_text(
+                        col.get("body") or col.get("description") or col.get("text"),
+                        500,
+                    )
                     if heading or body:
                         columns.append({"heading": heading or "Point", "body": body or "Details"})
                 if columns:
@@ -1426,8 +1595,11 @@ class RagChatService:
                 for card in cards_raw[:8]:
                     if not isinstance(card, dict):
                         continue
-                    heading = self._normalize_text(card.get("heading"), 100)
-                    description = self._normalize_text(card.get("description"), 500)
+                    heading = self._normalize_text(card.get("heading") or card.get("title"), 100)
+                    description = self._normalize_text(
+                        card.get("description") or card.get("body") or card.get("text"),
+                        500,
+                    )
                     if heading or description:
                         cards.append({
                             "heading": heading or "Point",
@@ -1491,6 +1663,197 @@ class RagChatService:
         if subtitle:
             out["subtitle"] = subtitle
         return out
+
+    def _sanitize_brand_guides_payload(self, raw: Any) -> Optional[dict[str, Any]]:
+        if not isinstance(raw, dict):
+            return None
+
+        brand_raw = raw.get("brand")
+        if isinstance(brand_raw, dict):
+            brand_name = self._normalize_text(brand_raw.get("name"), 60) or "Creator Brand"
+            brand_accent = self._normalize_text(brand_raw.get("accent"), 16) or "#FF6B00"
+            nav_links_raw = brand_raw.get("navLinks")
+            nav_links: list[str] = []
+            if isinstance(nav_links_raw, list):
+                for link in nav_links_raw[:5]:
+                    txt = self._normalize_text(link, 40)
+                    if txt:
+                        nav_links.append(txt)
+            year = self._normalize_text(brand_raw.get("year"), 12) or "2026"
+            version = self._normalize_text(brand_raw.get("version"), 24) or "Version 1.0"
+        else:
+            brand_name = "Creator Brand"
+            brand_accent = "#FF6B00"
+            nav_links = ["Introduction", "Logo", "Elements"]
+            year = "2026"
+            version = "Version 1.0"
+
+        slides_raw = raw.get("slides")
+        if not isinstance(slides_raw, list):
+            return None
+
+        allowed_types = {
+            "cover", "intro", "toc", "logo-grid", "clear-space",
+            "logo-detail", "typography", "palette", "logo-misuse", "section",
+        }
+        type_aliases = {
+            "title": "cover",
+            "text-only": "intro",
+            "text-image": "logo-detail",
+            "cards": "logo-grid",
+            "checklist": "logo-misuse",
+            "quiz": "section",
+        }
+
+        slides: list[dict[str, Any]] = []
+        has_toc = False
+        has_palette = False
+        has_governance = False
+
+        for slide_raw in slides_raw[:MAX_COURSE_SLIDES]:
+            if not isinstance(slide_raw, dict):
+                continue
+            raw_type = self._normalize_text(slide_raw.get("type"), 40).lower()
+            slide_type = type_aliases.get(raw_type, raw_type)
+            if slide_type not in allowed_types:
+                if isinstance(slide_raw.get("swatches"), list):
+                    slide_type = "palette"
+                elif isinstance(slide_raw.get("rules"), list):
+                    slide_type = "logo-misuse"
+                elif isinstance(slide_raw.get("items"), list):
+                    slide_type = "toc"
+                elif self._normalize_text(slide_raw.get("clearBody"), 30):
+                    slide_type = "clear-space"
+                else:
+                    slide_type = "intro"
+
+            slide: dict[str, Any] = {"type": slide_type}
+            for field, lim in (
+                ("title", 140), ("body", 1200), ("eyebrow", 80),
+                ("brandName", 140), ("tagline", 220), ("coverBg", 16),
+                ("patternColor", 24), ("introBg", 16), ("tocTitle", 100),
+                ("tocBg", 16), ("gridTitle", 100), ("gridSubtitle", 260),
+                ("logoText", 80), ("clearTitle", 120), ("clearSubtitle", 180),
+                ("clearBody", 1200), ("clearNote", 320), ("detailTitle", 120),
+                ("detailBody", 900), ("typoTitle", 120), ("typefaceName", 100),
+                ("typoBody", 900), ("displayChars", 20), ("displayColor", 16),
+                ("paletteTitle", 100), ("paletteLead", 120), ("paletteBody", 600),
+                ("misuseTitle", 120), ("misuseBody", 900), ("sectionBg", 16),
+                ("sectionFg", 16),
+            ):
+                value = self._normalize_text(slide_raw.get(field), lim)
+                if value:
+                    slide[field] = value
+
+            items_raw = slide_raw.get("items")
+            if isinstance(items_raw, list):
+                toc_items: list[dict[str, Any]] = []
+                for idx, item in enumerate(items_raw[:10]):
+                    if isinstance(item, dict):
+                        number_raw = item.get("number", idx + 1)
+                        label = self._normalize_text(item.get("label"), 80)
+                    else:
+                        number_raw = idx + 1
+                        label = self._normalize_text(item, 80)
+                    try:
+                        number = int(number_raw)
+                    except Exception:
+                        number = idx + 1
+                    if not label:
+                        continue
+                    toc_items.append({"number": max(1, number), "label": label})
+                if toc_items:
+                    slide["items"] = toc_items
+
+            rules_raw = slide_raw.get("rules")
+            if isinstance(rules_raw, list):
+                rules: list[dict[str, Any]] = []
+                for rule in rules_raw[:10]:
+                    if isinstance(rule, dict):
+                        r_type = self._normalize_text(rule.get("type"), 10).lower()
+                        text = self._normalize_text(rule.get("text"), 260)
+                    else:
+                        r_type = "dont"
+                        text = self._normalize_text(rule, 260)
+                    if r_type not in {"do", "dont"}:
+                        r_type = "dont"
+                    if not text:
+                        continue
+                    rules.append({"type": r_type, "text": text})
+                if rules:
+                    slide["rules"] = rules
+
+            swatches_raw = slide_raw.get("swatches")
+            if isinstance(swatches_raw, list):
+                swatches: list[dict[str, Any]] = []
+                for sw in swatches_raw[:10]:
+                    if not isinstance(sw, dict):
+                        continue
+                    name = self._normalize_text(sw.get("name"), 40)
+                    hex_value = self._normalize_text(sw.get("hex"), 16)
+                    if not name or not hex_value:
+                        continue
+                    sw_obj: dict[str, Any] = {"name": name, "hex": hex_value}
+                    cmyk = self._normalize_text(sw.get("cmyk"), 40)
+                    rgb = self._normalize_text(sw.get("rgb"), 40)
+                    if cmyk:
+                        sw_obj["cmyk"] = cmyk
+                    if rgb:
+                        sw_obj["rgb"] = rgb
+                    try:
+                        width = int(sw.get("width", 1))
+                    except Exception:
+                        width = 1
+                    sw_obj["width"] = max(1, min(5, width))
+                    swatches.append(sw_obj)
+                if swatches:
+                    slide["swatches"] = swatches
+
+            if slide_type == "cover" and not (slide.get("brandName") or slide.get("title")):
+                slide["brandName"] = "Brand Guidelines"
+            if slide_type == "intro" and not slide.get("body"):
+                slide["body"] = "This guide aligns visual identity for consistent creator content."
+            if slide_type == "toc":
+                if not slide.get("tocTitle"):
+                    slide["tocTitle"] = "Table of Content"
+                if not slide.get("items"):
+                    slide["items"] = [
+                        {"number": 1, "label": "Introduction"},
+                        {"number": 2, "label": "Logo System"},
+                        {"number": 3, "label": "Typography"},
+                        {"number": 4, "label": "Color Palette"},
+                    ]
+                has_toc = True
+            if slide_type == "palette":
+                if not slide.get("swatches"):
+                    slide["swatches"] = [
+                        {"name": "Primary", "hex": brand_accent, "width": 3},
+                        {"name": "Dark", "hex": "#111111", "width": 2},
+                        {"name": "Light", "hex": "#F4F4F4", "width": 2},
+                    ]
+                has_palette = True
+            if slide_type in {"logo-misuse", "clear-space"}:
+                has_governance = True
+
+            slides.append(slide)
+
+        if len(slides) < MIN_COURSE_SLIDES:
+            return None
+        if not has_toc or not has_palette:
+            return None
+        if not has_governance:
+            return None
+
+        return {
+            "brand": {
+                "name": brand_name,
+                "accent": brand_accent,
+                "navLinks": nav_links or ["Introduction", "Logo", "Elements"],
+                "year": year,
+                "version": version,
+            },
+            "slides": slides,
+        }
 
     def _normalize_text(self, value: Any, max_len: int) -> str:
         text = str(value or "").strip()

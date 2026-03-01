@@ -1,5 +1,6 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import { getNearestTimelineLabel, getVisibleTimelineData } from "./timeline-utils"
 
 export interface SentimentPoint {
   time: string
@@ -12,7 +13,13 @@ const sentimentConfig = {
   negative: { label: "Negative", color: "hsl(0 84% 60%)" },
 }
 
-export default function SentimentPulseChart({ data }: { data?: SentimentPoint[] }) {
+export default function SentimentPulseChart({
+  data,
+  currentTimeSeconds = Number.POSITIVE_INFINITY,
+}: {
+  data?: SentimentPoint[]
+  currentTimeSeconds?: number
+}) {
   const hasData = Array.isArray(data) && data.length > 0
 
   if (!hasData) {
@@ -37,6 +44,9 @@ export default function SentimentPulseChart({ data }: { data?: SentimentPoint[] 
     )
   }
 
+  const visibleData = getVisibleTimelineData(data || [], currentTimeSeconds)
+  const activeLabel = getNearestTimelineLabel(data || [], currentTimeSeconds)
+
   return (
     <div
       className="p-6 rounded-lg bg-white dark:bg-zinc-900/70 border border-zinc-100 
@@ -49,7 +59,7 @@ export default function SentimentPulseChart({ data }: { data?: SentimentPoint[] 
         </p>
       </div>
       <ChartContainer config={sentimentConfig} className="h-72 w-full">
-        <LineChart data={data}>
+        <LineChart data={visibleData}>
           <CartesianGrid
             strokeDasharray="3 3"
             className="stroke-zinc-200 dark:stroke-zinc-800"
@@ -57,6 +67,9 @@ export default function SentimentPulseChart({ data }: { data?: SentimentPoint[] 
           <XAxis dataKey="time" className="text-xs" />
           <YAxis className="text-xs" />
           <ChartTooltip content={<ChartTooltipContent />} />
+          {activeLabel && (
+            <ReferenceLine x={activeLabel} stroke="hsl(262 80% 56%)" strokeDasharray="4 4" />
+          )}
           <Line
             type="monotone"
             dataKey="positive"
@@ -76,5 +89,4 @@ export default function SentimentPulseChart({ data }: { data?: SentimentPoint[] 
     </div>
   )
 }
-
 

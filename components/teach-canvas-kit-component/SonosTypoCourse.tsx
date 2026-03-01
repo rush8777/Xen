@@ -112,7 +112,7 @@ interface PaletteConfig {
 const MAX_HIGHLIGHT_LINES = 5;
 const MAX_HIGHLIGHT_LINE_CHARS = 56;
 const MAX_HIGHLIGHTS_TOTAL_CHARS = 240;
-const MAX_COLUMNS = 3;
+const MAX_COLUMNS = 4;
 const MAX_COLUMN_BODY_CHARS = 190;
 const MAX_CONTENT_ITEMS = 7;
 
@@ -598,7 +598,7 @@ function ColumnsSlide({ slide, p, course, slideNum, totalSlides }: SlideSharedPr
     .filter((c) => c.heading || c.body);
 
   const finalCols = cols.length > 0 ? cols : fallbackFromCards;
-  const gridCount = Math.max(1, Math.min(finalCols.length || 1, 3));
+  const gridCount = Math.max(1, Math.min(finalCols.length || 1, MAX_COLUMNS));
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>

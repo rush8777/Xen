@@ -1,41 +1,23 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react";
-import { Paperclip, Globe, Lightbulb, MoreHorizontal, ArrowUp } from "lucide-react";
+import { useState, useRef } from "react";
+import { Paperclip, Globe, MoreHorizontal, ArrowUp } from "lucide-react";
 import { useProjects } from './useProjects';
 
 interface ChatInputProps {
   onSend: (
     message: string,
-    mentionedProject?: string,
-    clarificationAnswers?: Record<string, string>,
-    courseModeEnabled?: boolean
+    mentionedProject?: string
   ) => void;
-  courseModeEnabled?: boolean;
-  onToggleCourseMode?: () => void;
 }
 
-const ChatInput = ({ onSend, courseModeEnabled, onToggleCourseMode }: ChatInputProps) => {
+const ChatInput = ({ onSend }: ChatInputProps) => {
   const [message, setMessage] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [mentionText, setMentionText] = useState("");
   const [filteredProjects, setFilteredProjects] = useState<string[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [internalCourseModeEnabled, setInternalCourseModeEnabled] = useState(false);
-  const { projects, loading } = useProjects();
+  const { projects } = useProjects();
   const inputRef = useRef<HTMLInputElement>(null);
-  const effectiveCourseModeEnabled =
-    typeof courseModeEnabled === "boolean"
-      ? courseModeEnabled
-      : internalCourseModeEnabled;
-
-  const handleToggleCourseMode = () => {
-    if (onToggleCourseMode) {
-      onToggleCourseMode();
-      return;
-    }
-    setInternalCourseModeEnabled((prev) => !prev);
-  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -49,7 +31,6 @@ const ChatInput = ({ onSend, courseModeEnabled, onToggleCourseMode }: ChatInputP
       // Only show suggestions if there's no space after @ (active mention)
       if (!textAfterAt.includes(' ')) {
         const mention = textAfterAt;
-        setMentionText(mention);
         setFilteredProjects(projects.filter(p => p.toLowerCase().includes(mention.toLowerCase())));
         setShowSuggestions(true);
         setSelectedIndex(0);
@@ -107,7 +88,7 @@ const ChatInput = ({ onSend, courseModeEnabled, onToggleCourseMode }: ChatInputP
         mentionedProject = lastMention?.[1];
       }
 
-      onSend(message, mentionedProject, undefined, effectiveCourseModeEnabled);
+      onSend(message, mentionedProject);
       setMessage("");
     }
   };
@@ -137,54 +118,36 @@ const ChatInput = ({ onSend, courseModeEnabled, onToggleCourseMode }: ChatInputP
   return (
     <div className="w-full max-w-2xl mx-auto">
       <form onSubmit={handleSubmit}>
-        {/* Floating Chatbar */}
-        <div className="flex items-center gap-3 bg-white/5 backdrop-blur-xl border border-white/10 rounded-full px-6 py-3 shadow-lg">
-          <Paperclip className="w-4 h-4 text-zinc-400 cursor-pointer hover:text-zinc-300 transition-colors" />
+        <div className="w-full rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 overflow-hidden">
           <input
             ref={inputRef}
             value={message}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 100)}
-            placeholder="Ask anything..."
-            className="flex-1 bg-transparent text-white placeholder-zinc-500 outline-none text-xs"
+            placeholder="Ask a question or make a request..."
+            className="w-full bg-transparent text-white placeholder-zinc-500 text-xs px-4 pt-3.5 pb-2 outline-none leading-relaxed"
           />
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-zinc-800/50 hover:bg-zinc-800 transition-colors"
-            >
-              <Globe className="w-3.5 h-3.5 text-zinc-400" />
-              <span className="text-xs text-zinc-400">Search</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleToggleCourseMode}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-colors ${
-                effectiveCourseModeEnabled
-                  ? "bg-emerald-700/80 text-emerald-100 hover:bg-emerald-700"
-                  : "bg-zinc-800/50 hover:bg-zinc-800"
-              }`}
-            >
-              <Lightbulb className="w-3.5 h-3.5 text-zinc-400" />
-              <span className="text-xs">Course Mode</span>
-            </button>
-            <button
-              type="button"
-              className="p-1.5 rounded-full hover:bg-zinc-800/50 transition-colors"
-            >
-              <MoreHorizontal className="w-4 h-4 text-zinc-400" />
-            </button>
+          <div className="flex items-center justify-between px-3 pb-3 pt-1">
+            <div className="flex items-center gap-1">
+              <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all text-[11px] font-medium">
+                <Paperclip className="w-3 h-3" />
+                <span>Attach</span>
+              </button>
+              <button className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all">
+                <Globe className="w-3 h-3" />
+              </button>
+            </div>
             <button
               type="submit"
               disabled={!message.trim()}
-              className={`p-2 rounded-full transition-colors ${
+              className={`p-2 rounded-lg transition-all ${
                 message.trim()
                   ? "bg-purple-600 hover:bg-purple-700 text-white"
                   : "bg-zinc-800/50 text-zinc-600 cursor-not-allowed"
               }`}
             >
-              <ArrowUp className="w-4 h-4" />
+              <ArrowUp className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

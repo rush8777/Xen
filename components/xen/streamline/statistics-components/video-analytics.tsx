@@ -2,17 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
+import { Pause, Play } from "lucide-react"
 import EmotionalIntensityChart from "./emotional-anal"
-import {
-  AgeDistribution,
-  GenderDistribution,
-  TopLocations,
-  AudienceInterests,
-} from "./audience-demographics"
 import VideoMetricsGrid from "./VideoMetricsGrid"
 import SentimentPulseChart from "./SentimentPulseChart"
 import EmotionRadarChart from "./EmotionRadarChart"
-import TopComments from "./TopComments"
+import EngagementTrendCurve from "./EngagementTrendCurve"
+import { formatSecondsToTimeLabel, getTimelineMaxSeconds } from "./timeline-utils"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 
@@ -24,13 +20,10 @@ type ProjectStatisticsPayload = {
   sentiment_pulse?: any
   emotion_radar?: any
   emotional_intensity_timeline?: any
-  audience_demographics?: {
-    age_distribution?: any
-    gender_distribution?: any
-    top_locations?: any
-    audience_interests?: any
+  engagement_trend_curve?: any
+  source?: {
+    video_duration_seconds?: number | null
   }
-  top_comments?: any
 }
 
 type ProjectStatisticsResponse = {
@@ -49,7 +42,19 @@ type ProjectStatisticsStatusResponse = {
   error: string | null
 }
 
-export default function VideoAnalytics() {
+type VideoAnalyticsProps = {
+  currentTimeSeconds?: number | null
+  durationSeconds?: number | null
+  isExternalClockActive?: boolean
+  onSeekTimeline?: (seconds: number) => void
+}
+
+export default function VideoAnalytics({
+  currentTimeSeconds,
+  durationSeconds,
+  isExternalClockActive,
+  onSeekTimeline,
+}: VideoAnalyticsProps) {
   const searchParams = useSearchParams()
   const projectId = searchParams.get("projectId")
 
@@ -61,6 +66,8 @@ export default function VideoAnalytics() {
 
   const [loading, setLoading] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [syntheticTimeSeconds, setSyntheticTimeSeconds] = useState(0)
+  const [syntheticPlaying, setSyntheticPlaying] = useState(false)
 
   const handleRegenerateStats = async () => {
     if (!projectId || regenerating) return
@@ -110,7 +117,60 @@ export default function VideoAnalytics() {
     setStats(null)
     setStatsError(null)
     setLoading(false)
+    setSyntheticPlaying(false)
+    setSyntheticTimeSeconds(0)
   }, [projectId])
+
+  const inferredTimelineDuration = useMemo(
+    () =>
+      getTimelineMaxSeconds(
+        stats?.sentiment_pulse,
+        stats?.emotional_intensity_timeline,
+        stats?.engagement_trend_curve
+      ),
+    [stats]
+  )
+
+  const statsDurationSeconds = useMemo(() => {
+    const value = stats?.source?.video_duration_seconds
+    return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+  }, [stats])
+
+  const timelineDuration = useMemo(() => {
+    if (durationSeconds && durationSeconds > 0) return durationSeconds
+    if (statsDurationSeconds > 0) return statsDurationSeconds
+    if (inferredTimelineDuration > 0) return inferredTimelineDuration
+    return 0
+  }, [durationSeconds, statsDurationSeconds, inferredTimelineDuration])
+
+  const externalClockEnabled = Boolean(isExternalClockActive && currentTimeSeconds !== null && currentTimeSeconds !== undefined)
+  const activeTimelineTime = externalClockEnabled
+    ? Number(currentTimeSeconds || 0)
+    : syntheticTimeSeconds
+
+  useEffect(() => {
+    if (!externalClockEnabled) return
+    setSyntheticTimeSeconds(Math.max(0, Number(currentTimeSeconds || 0)))
+  }, [externalClockEnabled, currentTimeSeconds])
+
+  useEffect(() => {
+    if (externalClockEnabled) return
+    if (!syntheticPlaying) return
+    if (!timelineDuration || timelineDuration <= 0) return
+
+    const intervalId = setInterval(() => {
+      setSyntheticTimeSeconds((prev) => {
+        const next = prev + 0.25
+        if (next >= timelineDuration) {
+          setSyntheticPlaying(false)
+          return timelineDuration
+        }
+        return next
+      })
+    }, 250)
+
+    return () => clearInterval(intervalId)
+  }, [externalClockEnabled, syntheticPlaying, timelineDuration])
 
   useEffect(() => {
     let cancelled = false
@@ -293,26 +353,73 @@ export default function VideoAnalytics() {
     )
   }
 
+  const handleTimelineSeek = (nextValue: number) => {
+    const clamped = Math.max(0, Math.min(nextValue, timelineDuration || nextValue))
+    setSyntheticTimeSeconds(clamped)
+    if (externalClockEnabled && onSeekTimeline) {
+      onSeekTimeline(clamped)
+    }
+  }
+
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/70 shadow-sm backdrop-blur-xl p-4">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+              {externalClockEnabled ? "Synced to video playback" : "Synthetic timeline playback"}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (externalClockEnabled) return
+                setSyntheticPlaying((prev) => !prev)
+              }}
+              disabled={externalClockEnabled || timelineDuration <= 0}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {syntheticPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              {syntheticPlaying ? "Pause" : "Play"}
+            </button>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={Math.max(1, Math.floor(timelineDuration || 1))}
+            value={Math.max(0, Math.floor(activeTimelineTime || 0))}
+            onChange={(e) => handleTimelineSeek(Number(e.target.value))}
+            className="w-full accent-purple-600"
+          />
+          <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+            <span>{formatSecondsToTimeLabel(activeTimelineTime || 0)}</span>
+            <span>{formatSecondsToTimeLabel(timelineDuration || 0)}</span>
+          </div>
+        </div>
+      </div>
+
       <VideoMetricsGrid data={stats?.video_metrics_grid} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SentimentPulseChart data={stats?.sentiment_pulse} />
-        <EmotionRadarChart data={stats?.emotion_radar} />
+        <SentimentPulseChart
+          data={stats?.sentiment_pulse}
+          currentTimeSeconds={activeTimelineTime}
+        />
+        <EmotionRadarChart
+          data={stats?.emotion_radar}
+          currentTimeSeconds={activeTimelineTime}
+          durationSeconds={timelineDuration}
+        />
       </div>
 
-      <EmotionalIntensityChart data={stats?.emotional_intensity_timeline} />
+      <EmotionalIntensityChart
+        data={stats?.emotional_intensity_timeline}
+        currentTimeSeconds={activeTimelineTime}
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AgeDistribution data={stats?.audience_demographics?.age_distribution} />
-        <GenderDistribution data={stats?.audience_demographics?.gender_distribution} />
-        <TopLocations data={stats?.audience_demographics?.top_locations} />
-        <AudienceInterests data={stats?.audience_demographics?.audience_interests} />
-      </div>
-
-      <TopComments comments={stats?.top_comments} />
+      <EngagementTrendCurve
+        data={stats?.engagement_trend_curve}
+        currentTimeSeconds={activeTimelineTime}
+      />
     </div>
   )
 }
-

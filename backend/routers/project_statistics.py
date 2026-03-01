@@ -2,23 +2,26 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from threading import Thread
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..database import SessionLocal
+from ..config import settings
 from ..dependencies import get_db
-from ..gemini_backend.config import GEMINI_API_KEY
 from ..models import Project, ProjectStatistics
-from ..services.project_statistics_generator import ProjectStatisticsGenerator
+from ..services.statistics_tasks import (
+    create_statistics_run,
+    ensure_statistics_pending,
+    execute_statistics_generation,
+    update_run_status,
+)
+from ..services.task_queue import QueueConfigurationError, enqueue_statistics_generation
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["project-statistics"])
-
-stats_generator = ProjectStatisticsGenerator(api_key=GEMINI_API_KEY)
 
 
 class StatisticsStatusResponse(BaseModel):
@@ -35,55 +38,6 @@ class StatisticsResponse(BaseModel):
     generated_at: str
     version: int
     status: str
-
-
-def _generate_statistics_sync(project_id: int) -> None:
-    db = SessionLocal()
-    try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            logger.error("Project %s not found for statistics generation", project_id)
-            return
-
-        stats_record = (
-            db.query(ProjectStatistics)
-            .filter(ProjectStatistics.project_id == project_id)
-            .first()
-        )
-        if not stats_record:
-            stats_record = ProjectStatistics(project_id=project_id, stats_json="{}", status="pending")
-            db.add(stats_record)
-            db.commit()
-            db.refresh(stats_record)
-
-        stats_record.status = "pending"
-        stats_record.error = None
-        db.commit()
-
-        try:
-            stats_data = stats_generator.generate_statistics(
-                analysis_file_path=project.analysis_file_path or "",
-                video_url=project.video_url or "",
-                project_name=project.name,
-                project_id=project.id,
-                job_id=project.job_id,
-                cached_content_name=project.gemini_cached_content_name,
-                video_duration_seconds=project.video_duration_seconds,
-            )
-
-            stats_record.stats_json = json.dumps(stats_data)
-            stats_record.status = "completed"
-            stats_record.generated_at = datetime.utcnow()
-            stats_record.error = None
-            db.commit()
-            logger.info("Statistics generation completed for project %s", project_id)
-        except Exception as e:
-            logger.error("Statistics generation failed for project %s: %s", project_id, e)
-            stats_record.status = "failed"
-            stats_record.error = str(e)
-            db.commit()
-    finally:
-        db.close()
 
 
 @router.get("/{project_id}/statistics", response_model=StatisticsResponse)
@@ -146,15 +100,11 @@ def get_statistics_status(project_id: int, db: Session = Depends(get_db)) -> Sta
 @router.post("/{project_id}/statistics/regenerate", response_model=StatisticsStatusResponse)
 def regenerate_project_statistics(
     project_id: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> StatisticsStatusResponse:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
-    if not project.analysis_file_path:
-        raise HTTPException(status_code=400, detail="Project has no analysis file. Cannot generate statistics.")
 
     stats = (
         db.query(ProjectStatistics)
@@ -162,17 +112,34 @@ def regenerate_project_statistics(
         .first()
     )
 
-    if not stats:
-        stats = ProjectStatistics(project_id=project_id, stats_json="{}", status="pending")
-        db.add(stats)
-        db.commit()
-        db.refresh(stats)
-    else:
-        stats.status = "pending"
-        stats.error = None
-        db.commit()
+    stats = ensure_statistics_pending(project_id=project_id)
+    run = create_statistics_run(project_id=project_id)
 
-    background_tasks.add_task(_generate_statistics_sync, project_id)
+    if settings.TASKS_MODE == "cloud_tasks":
+        try:
+            enqueue_statistics_generation(project_id=project_id, run_id=run.id)
+        except QueueConfigurationError as exc:
+            logger.warning(
+                "Cloud Tasks unavailable for statistics project %s; falling back to local thread: %s",
+                project_id,
+                exc,
+            )
+            Thread(
+                target=execute_statistics_generation,
+                kwargs={"project_id": project_id, "run_id": run.id},
+                daemon=True,
+            ).start()
+        except Exception as exc:
+            logger.exception("Failed to enqueue statistics task for project %s", project_id)
+            update_run_status(run_id=run.id, status="failed", error=str(exc), completed=True)
+            raise HTTPException(status_code=500, detail=f"Failed to enqueue statistics task: {exc}")
+    else:
+        # Local/dev fallback: execute in detached thread to keep API responsive.
+        Thread(
+            target=execute_statistics_generation,
+            kwargs={"project_id": project_id, "run_id": run.id},
+            daemon=True,
+        ).start()
 
     return StatisticsStatusResponse(
         project_id=project_id,

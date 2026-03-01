@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, DragEvent, useCallback, ChangeEvent
 import { useRouter } from "next/navigation"
 
 import { MultiStepLoader } from "@/components/ui/multi-step-loader"
+import OAuthComingSoon from "./oauth-coming-soon"
 
 import { cn } from "@/lib/utils"
 
@@ -99,6 +100,7 @@ interface LibraryVideo {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
+const SHOW_OAUTH_COMING_SOON = true
 
 // Masonry breakpoint configuration
 const breakpointColumns = {
@@ -506,8 +508,17 @@ export default function CreateProjectModal({
           </div>
         )}
 
-        <form id="project-form" onSubmit={handleSubmit} className="h-full max-h-[85vh] overflow-hidden">
-          <div className="max-w-[1400px] mx-auto px-4 py-4">
+        {SHOW_OAUTH_COMING_SOON ? (
+          <div className="h-full flex items-center justify-center p-6">
+            <OAuthComingSoon
+              title="Project Creation Coming Soon"
+              description="OAuth-based project creation is temporarily unavailable. Your backend and OAuth setup are preserved and will be re-enabled in a future update."
+              className="max-w-2xl"
+            />
+          </div>
+        ) : (
+          <form id="project-form" onSubmit={handleSubmit} className="h-full max-h-[85vh] overflow-hidden">
+            <div className="max-w-[1400px] mx-auto px-4 py-4">
             {/* Header (Explore 1:1) */}
             <div className="mb-4">
               <div className="flex items-start justify-between mb-2">
@@ -687,8 +698,9 @@ export default function CreateProjectModal({
                 </Masonry>
               )}
             </div>
-          </div>
-        </form>
+            </div>
+          </form>
+        )}
       </div>
 
       {/* Global Masonry Styles */}

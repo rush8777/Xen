@@ -32,7 +32,7 @@ class StatisticsGenerator:
     """
     
     SCHEMA_VERSION = 1
-    PROMPT_VERSION = "v2.0-optimized"  # Update when prompts change
+    PROMPT_VERSION = "v2.1-engagement-trend"  # Update when prompts change
     
     COMPONENT_NAMES = [
         "video_metrics_grid",
@@ -43,7 +43,7 @@ class StatisticsGenerator:
         "audience_demographics.gender_distribution",
         "audience_demographics.top_locations",
         "audience_demographics.audience_interests",
-        "top_comments",
+        "engagement_trend_curve",
     ]
     
     def __init__(self, output_dir: Path = None):
@@ -57,6 +57,7 @@ class StatisticsGenerator:
         video_url: str,
         project_name: str,
         component_name: str,
+        duration_seconds: float | None = None,
         use_cache: bool = True,
     ) -> Dict[str, Any]:
         """
@@ -108,7 +109,8 @@ class StatisticsGenerator:
             component_name,
             compact_data,
             video_url,
-            project_name
+            project_name,
+            duration_seconds=duration_seconds,
         )
         
         # Step 4: Call LLM
@@ -147,6 +149,7 @@ class StatisticsGenerator:
         analysis_content: str,
         video_url: str,
         project_name: str,
+        duration_seconds: float | None = None,
         use_cache: bool = True,
     ) -> Dict[str, Any]:
         """
@@ -170,6 +173,7 @@ class StatisticsGenerator:
                     video_url=video_url,
                     project_name=project_name,
                     component_name=component_name,
+                    duration_seconds=duration_seconds,
                     use_cache=use_cache,
                 )
                 results[component_name] = result

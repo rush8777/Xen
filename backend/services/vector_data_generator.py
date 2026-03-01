@@ -35,8 +35,7 @@ Expected Gemini JSON schema
           "embedding": [0.1, 0.2, ...]          // list[float] | null (stored in sub_video_interval_embeddings)
         }
       ],
-      "combined_interval_text": "...",           // str | null  (for IntervalEmbedding)
-      "interval_embedding": [0.1, 0.2, ...]     // list[float] | null
+      "combined_interval_text": "..."            // str | null
     }
   ]
 }
@@ -123,7 +122,7 @@ INTERVAL: [MM:SS – MM:SS]
 9. OCCLUSIONS & VISIBILITY LIMITS
 
 SECTION RULES
-**Should contain 200 words for each section**
+**Should contain 100 words for each section**
 
 1. CAMERA & FRAME
 
@@ -208,6 +207,63 @@ IMPORTANT: Return ONLY valid JSON matching this exact schema (no markdown fences
       "end_time_seconds": 20,
       "combined_interval_text": "string or null",
       "interval_embedding": null,
+      "sub_intervals": [
+        {
+          "sub_index": 0,
+          "start_time_seconds": 0,
+          "end_time_seconds": 20,
+          "camera_frame": "string or null",
+          "environment_background": "string or null",
+          "people_figures": "string or null",
+          "objects_props": "string or null",
+          "text_symbols": "string or null",
+          "motion_changes": "string or null",
+          "lighting_color": "string or null",
+          "audio_visible_indicators": "string or null",
+          "occlusions_limits": "string or null",
+          "raw_combined_text": "string or null",
+          "embedding": null
+        }
+      ]
+    }
+  ]
+}
+""".strip()
+
+
+# Cost-optimized alternative prompt for lower token spend.
+# Use by passing prompt_template=COST_OPTIMIZED_VECTOR_PROMPT_TEMPLATE
+# when calling generate_vector_data_for_project(...).
+COST_OPTIMIZED_VECTOR_PROMPT_TEMPLATE = """
+ROLE
+You are a strict visual logger. Describe only directly visible evidence.
+
+TEMPORAL RULES
+- Cover the full video from 00:00 to the end with contiguous intervals.
+- Use 20-second intervals when the scene has meaningful visual change.
+- Use 40-second intervals when the scene is mostly static.
+- Never skip time, never overlap intervals, never merge non-adjacent time.
+- interval_index must be 0-based and increase by 1 per returned interval.
+
+OBSERVATION RULES
+- Do not infer intent, emotion, identity, off-screen events, or causes.
+- If not visible, use exactly: "Not visually identifiable."
+- Keep each field short and factual, max 18 words.
+- Keep output compact for indexing, not narration.
+
+NO-CHANGE COMPRESSION RULE
+- If an interval is visually unchanged from the prior interval, keep fields minimal.
+- Use short deltas such as "No material visual change from previous interval."
+- Do not repeat long descriptions across unchanged intervals.
+
+IMPORTANT: Return ONLY valid JSON matching this schema (no markdown, no extra keys):
+{
+  "intervals": [
+    {
+      "interval_index": 0,
+      "start_time_seconds": 0,
+      "end_time_seconds": 20,
+      "combined_interval_text": "string or null",
       "sub_intervals": [
         {
           "sub_index": 0,
@@ -355,7 +411,6 @@ def _insert_vector_data(
         start_sec = int(interval_dict.get("start_time_seconds", 0))
         end_sec = int(interval_dict.get("end_time_seconds", start_sec + 20))
         interval_text = interval_dict.get("combined_interval_text")
-        interval_embedding = interval_dict.get("interval_embedding")
 
         # ------------------------------------------------------------------
         # Upsert VideoInterval
@@ -390,7 +445,7 @@ def _insert_vector_data(
             end_time_seconds=end_sec,
             parent_interval_id=None,
         )
-        interval_record = upsert_analysis_record(
+        upsert_analysis_record(
             db,
             project_id=project_id,
             video_id=video_id,
@@ -400,11 +455,6 @@ def _insert_vector_data(
             status="completed",
             summary_text=interval_text,
             payload=interval_dict,
-        )
-        upsert_analysis_embedding(
-            db,
-            analysis_record_id=interval_record.id,
-            embedding=interval_embedding if isinstance(interval_embedding, list) else None,
         )
 
         # ------------------------------------------------------------------
@@ -673,13 +723,14 @@ async def generate_vector_data_for_project(
             current_premium_status = project.premium_analysis_status or "not_started"
             if current_premium_status == "not_started":
                 try:
-                    from .premium_analysis_service import (
-                        generate_premium_analysis_for_project,
-                    )
+                    from ..config import settings
+                    from .task_queue import enqueue_premium_generation
+                    from .worker_tasks import run_premium_task
 
-                    asyncio.create_task(
-                        generate_premium_analysis_for_project(project_id)
-                    )
+                    if settings.TASKS_MODE == "cloud_tasks":
+                        enqueue_premium_generation(project_id=project_id)
+                    else:
+                        asyncio.create_task(asyncio.to_thread(run_premium_task, project_id=project_id))
                     logger.info(
                         "[VectorGen] Auto-triggered premium analysis for project %s.",
                         project_id,

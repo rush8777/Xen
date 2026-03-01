@@ -132,6 +132,24 @@ class AnalysisCompactor:
 TONE:
 {tone[:500]}
 """
+
+        elif component_name == "engagement_trend_curve":
+            # Need: timeline text + tone + compact metadata for engagement inference
+            metadata = self.extract_video_metadata(analysis_content)
+            text = self.extract_text_overlays_timeline(analysis_content)
+            tone = self.extract_visual_tone_summary(analysis_content)
+
+            return f"""ENGAGEMENT CONTEXT:
+CONTENT_TYPE: {metadata.get('content_type', 'general')}
+SETTING: {metadata.get('setting', 'unknown')}
+HAS_PEOPLE: {metadata.get('has_people', False)}
+
+TEXT TIMELINE:
+{text[:1600]}
+
+VISUAL TONE:
+{tone[:700]}
+"""
         
         elif component_name.startswith("audience_demographics"):
             # Just need high-level metadata

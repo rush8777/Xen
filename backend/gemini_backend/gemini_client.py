@@ -137,7 +137,7 @@ async def generate_statistics_from_cached_video(
         "audience_demographics.gender_distribution": [...],
         "audience_demographics.top_locations": [...],
         "audience_demographics.audience_interests": [...],
-        "top_comments": [...]
+        "engagement_trend_curve": [...]
       }
     """
     # Import here to avoid circular dependencies
@@ -156,7 +156,7 @@ async def generate_statistics_from_cached_video(
         "audience_demographics.gender_distribution",
         "audience_demographics.top_locations",
         "audience_demographics.audience_interests",
-        "top_comments",
+        "engagement_trend_curve",
     ]
 
     results = {}
@@ -171,6 +171,7 @@ async def generate_statistics_from_cached_video(
                 compact_data="",  # Empty - using cached video instead of text
                 video_url=video_url,
                 project_name=project_name,
+                duration_seconds=duration_seconds,
             )
 
             # Call Gemini with cached video content

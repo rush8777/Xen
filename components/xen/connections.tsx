@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Search, Zap, CheckCircle2, Circle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import OAuthComingSoon from "./oauth-coming-soon"
 
 interface AppConnection {
   id: string
@@ -30,6 +31,7 @@ const statusConfig = {
     label: "DISCONNECTED",
   },
 }
+const SHOW_OAUTH_COMING_SOON = true
 
 export default function Connections() {
   const [apps, setApps] = useState<AppConnection[]>([])
@@ -51,6 +53,10 @@ export default function Connections() {
     process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8000"
 
   useEffect(() => {
+    if (SHOW_OAUTH_COMING_SOON) {
+      return
+    }
+
     const fetchConnections = async () => {
       try {
         setIsLoading(true)
@@ -138,6 +144,22 @@ export default function Connections() {
       app.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       app.description.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  if (SHOW_OAUTH_COMING_SOON) {
+    return (
+      <div className="max-w-6xl mx-auto px-4">
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-white">
+            Integrations
+          </h1>
+        </div>
+        <OAuthComingSoon
+          title="Integrations Coming Soon"
+          description="OAuth integrations are temporarily unavailable while this flow is being rebuilt. Existing backend and frontend settings are kept intact for future activation."
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4">

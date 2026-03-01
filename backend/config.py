@@ -54,6 +54,33 @@ class Settings:
     """
 
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+    TASKS_MODE: str = os.getenv("TASKS_MODE", "inline").strip().lower()
+    GCP_PROJECT_ID: str | None = os.getenv("GCP_PROJECT_ID")
+    GCP_LOCATION: str = os.getenv("GCP_LOCATION", "us-central1")
+    CLOUD_TASKS_QUEUE_INGEST: str = os.getenv("CLOUD_TASKS_QUEUE_INGEST", "ingest-generate-queue")
+    CLOUD_TASKS_QUEUE_STATS: str = os.getenv("CLOUD_TASKS_QUEUE_STATS", "stats-generate-queue")
+    CLOUD_TASKS_QUEUE_VECTOR: str = os.getenv("CLOUD_TASKS_QUEUE_VECTOR", "vector-generate-queue")
+    CLOUD_TASKS_QUEUE_OVERVIEW: str = os.getenv("CLOUD_TASKS_QUEUE_OVERVIEW", "overview-generate-queue")
+    CLOUD_TASKS_QUEUE_PREMIUM: str = os.getenv("CLOUD_TASKS_QUEUE_PREMIUM", "premium-generate-queue")
+    CLOUD_TASKS_QUEUE_PSYCHOLOGY: str = os.getenv("CLOUD_TASKS_QUEUE_PSYCHOLOGY", "psychology-generate-queue")
+    CLOUD_TASKS_QUEUE_CONTENT_FEATURES: str = os.getenv(
+        "CLOUD_TASKS_QUEUE_CONTENT_FEATURES",
+        "content-features-generate-queue",
+    )
+
+    WORKER_BASE_URL: str | None = os.getenv("WORKER_BASE_URL")  # backward compat
+    WORKER_AUDIENCE: str | None = os.getenv("WORKER_AUDIENCE")  # backward compat
+    WORKER_INGEST_BASE_URL: str | None = os.getenv("WORKER_INGEST_BASE_URL")
+    WORKER_STATS_BASE_URL: str | None = os.getenv("WORKER_STATS_BASE_URL")
+    WORKER_VECTOR_BASE_URL: str | None = os.getenv("WORKER_VECTOR_BASE_URL")
+    WORKER_DEEP_ANALYSIS_BASE_URL: str | None = os.getenv("WORKER_DEEP_ANALYSIS_BASE_URL")
+    WORKER_INGEST_AUDIENCE: str | None = os.getenv("WORKER_INGEST_AUDIENCE")
+    WORKER_STATS_AUDIENCE: str | None = os.getenv("WORKER_STATS_AUDIENCE")
+    WORKER_VECTOR_AUDIENCE: str | None = os.getenv("WORKER_VECTOR_AUDIENCE")
+    WORKER_DEEP_ANALYSIS_AUDIENCE: str | None = os.getenv("WORKER_DEEP_ANALYSIS_AUDIENCE")
+    WORKER_INVOKER_SERVICE_ACCOUNT: str | None = os.getenv("WORKER_INVOKER_SERVICE_ACCOUNT")
+    WORKER_AUTH_MODE: str = os.getenv("WORKER_AUTH_MODE", "none").strip().lower()
+    WORKER_SHARED_SECRET: str | None = os.getenv("WORKER_SHARED_SECRET")
 
     FRONTEND_BASE_URL: str = os.getenv(
         "FRONTEND_BASE_URL",

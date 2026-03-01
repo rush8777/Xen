@@ -270,6 +270,38 @@ class ProjectStatistics(Base):
     project = relationship("Project")
 
 
+class ProjectPsychologyAnalysis(Base):
+    __tablename__ = "project_psychology_analyses"
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_project_psychology_analysis_project"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id"),
+        nullable=False,
+        index=True,
+        unique=True,
+    )
+
+    psychology_json = Column(Text, nullable=False, default="{}")
+    status = Column(String(20), nullable=False, default="pending")  # not_started, pending, completed, failed
+    version = Column(Integer, nullable=False, default=1)
+    error = Column(Text, nullable=True)
+
+    generated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+
+
 class ProjectContentFeatures(Base):
     __tablename__ = "project_content_features"
     __table_args__ = (
@@ -997,3 +1029,42 @@ class AnalysisRun(Base):
     )
 
     project = relationship("Project")
+
+
+class PipelineJob(Base):
+    __tablename__ = "pipeline_jobs"
+    __table_args__ = (
+        UniqueConstraint("job_id", name="uq_pipeline_job_job_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String(255), nullable=False, unique=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    job_type = Column(String(64), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="queued", index=True)
+    step = Column(Integer, nullable=False, default=0)
+    message = Column(String(255), nullable=False, default="Queued")
+    error = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    project = relationship("Project")
+
+
+class PipelineJobEvent(Base):
+    __tablename__ = "pipeline_job_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String(255), nullable=False, index=True)
+    status = Column(String(20), nullable=False)
+    step = Column(Integer, nullable=False, default=0)
+    message = Column(String(255), nullable=False, default="")
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

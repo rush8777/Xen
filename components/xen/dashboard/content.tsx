@@ -3,6 +3,10 @@
 import { ArrowRight, Filter, ArrowUpDown, Link2, MessageCircle, X, ChevronDown, Play, Image, FileText, Film, Users, MoreHorizontal, Trash2, Lightbulb } from "lucide-react"
 import { useState, useRef, useEffect, useCallback } from "react"
 import CreateProjectModal from "@/components/xen/create-project"
+import CourseActionButtons from "@/components/xen/dashboard/CourseActionButtons"
+import type { UrlImportPreview } from "@/components/xen/dashboard/CourseActionButtons"
+import DashboardBanner from "@/components/xen/dashboard/DashboardBanner"
+import TopBar from "@/components/xen/dashboard/TopBar"
 import { Card, CardContent } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
@@ -41,6 +45,7 @@ type ApiProject = {
   category?: string | null
   description?: string | null
   video_url?: string | null
+  thumbnail_url?: string | null
   priority?: string | null
   progress: number
   status: string
@@ -99,8 +104,10 @@ export default function CoursePage() {
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null)
   const [selectedContentType, setSelectedContentType] = useState<string | null>(null)
   const filterRef = useRef<HTMLDivElement>(null)
+  const attemptedPreviewIdsRef = useRef<Set<string>>(new Set())
   const [projects, setProjects] = useState<DashboardProject[]>([])
   const [recentChats, setRecentChats] = useState<RecentChatItem[]>([])
+  const [urlImportPreview, setUrlImportPreview] = useState<UrlImportPreview | null>(null)
   const { setLoading, setStep, setLoadingStates } = useGlobalLoader()
 
   const handleInitializingChange = useCallback(
@@ -187,6 +194,26 @@ export default function CoursePage() {
     return undefined
   }, [])
 
+  const ensureProjectThumbnail = useCallback(async (projectId: string) => {
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/thumbnail/ensure`,
+        {
+          method: "POST",
+          cache: "no-store",
+        }
+      )
+      if (!res.ok) return undefined
+      const data = await res.json()
+      if (typeof data?.thumbnail_url === "string" && data.thumbnail_url.trim()) {
+        return data.thumbnail_url
+      }
+    } catch {
+      return undefined
+    }
+    return undefined
+  }, [API_BASE_URL])
+
   const loadProjects = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/projects?limit=100`, {
@@ -202,7 +229,7 @@ export default function CoursePage() {
         const progress = typeof p.progress === "number" ? p.progress : 0
         const priority = p.priority || "Video"
         const category = normalizeCategory(p.category)
-        const thumbnailUrl = getThumbnailUrl(p.video_url)
+        const thumbnailUrl = p.thumbnail_url || getThumbnailUrl(p.video_url)
         return {
           id: String(p.id),
           title: p.name,
@@ -218,6 +245,7 @@ export default function CoursePage() {
           column: mapColumn(p.status),
         }
       })
+      attemptedPreviewIdsRef.current.clear()
       setProjects(mapped)
     } catch (e) {
       console.error("Failed to load projects:", e)
@@ -270,6 +298,41 @@ export default function CoursePage() {
     loadProjects()
     loadRecentChats()
   }, [loadProjects, loadRecentChats])
+
+  useEffect(() => {
+    const pending = projects.filter(
+      (p) =>
+        !p.thumbnailUrl &&
+        !attemptedPreviewIdsRef.current.has(p.id)
+    )
+    if (pending.length === 0) return
+
+    let cancelled = false
+    pending.forEach((p) => attemptedPreviewIdsRef.current.add(p.id))
+
+    const hydrateMissingThumbnails = async () => {
+      const updates = await Promise.all(
+        pending.map(async (p) => ({
+          id: p.id,
+          thumbnailUrl: await ensureProjectThumbnail(p.id),
+        }))
+      )
+
+      if (cancelled) return
+      setProjects((prev) =>
+        prev.map((proj) => {
+          const found = updates.find((u) => u.id === proj.id)
+          if (!found?.thumbnailUrl) return proj
+          return { ...proj, thumbnailUrl: found.thumbnailUrl }
+        })
+      )
+    }
+
+    void hydrateMissingThumbnails()
+    return () => {
+      cancelled = true
+    }
+  }, [ensureProjectThumbnail, projects])
 
   useEffect(() => {
     const onFocus = () => {
@@ -459,125 +522,24 @@ function ChatRow({ chat, index }: { chat: RecentChatItem; index: number }) {
 }
 
   return (
-    <div className="space-y-8 min-h-screen bg-gray-50 dark:bg-[#0F0F12] p-6">
+    <div className="space-y-4 min-h-screen bg-gray-50 dark:bg-[#0F0F12] pt-2 px-6 pb-6">
+      {/* Top Bar */}
+      <TopBar title="Projects" credits={360} />
+      
       {/* Course Banner */}
-      <div className="rounded-2xl p-8 text-white flex items-center justify-between overflow-hidden relative h-48 border border-gray-300">
-        <img
-          src="/images/icons/banner_overlay.png"
-          alt="Course Banner"
-          className="absolute top-0 right-0 h-full w-auto"
-        />
-        <div className="relative z-10">
-          <p className="text-sm font-semibold tracking-widest text-purple-200 mb-2">ONLINE COURSE</p>
-          <h1 className="text-4xl font-bold mb-6">Sharpen Your Skills with<br />Professional Online Courses</h1>
-          <button className="bg-black hover:bg-gray-800 transition-colors text-white rounded-full px-6 py-3 font-semibold flex items-center gap-2">
-            Join Now
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <DashboardBanner />
 
-      {/* Course Cards - NEW DESIGN */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {courses.map((course) => {
-          const Icon = course.icon
-          return (
-            <button
-              key={course.id}
-              onClick={() => handleCourseClick(course)}
-              className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] border border-white/5 hover:border-white/10 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50"
-            >
-              {/* Gradient overlay */}
-              <div className={`absolute inset-0 bg-gradient-to-br ${course.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
-              
-              {/* Noise texture overlay */}
-              <div className="absolute inset-0 opacity-[0.015] mix-blend-overlay">
-                <div className="w-full h-full" style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: 'repeat'
-                }} />
-              </div>
-              {/* Content */}
-              <div className="relative p-4 flex flex-col items-start h-full min-h-[150px]">
-                {/* Text content */}
-                <div className="mb-4 space-y-2">
-                  <h3 className="text-lg font-semibold text-white group-hover:text-white/90">
-                    {course.label}
-                  </h3>
-                  <p className="text-xs text-gray-400 leading-relaxed group-hover:text-gray-300">
-                    {course.description}
-                  </p>
-                </div>
-
-                {/* Learn more link */}
-                <div className="flex items-center justify-center gap-2 text-xs font-medium">
-                  <span className={getAccentColorClass(course.accentColor)}>
-                    Learn more
-                  </span>
-                  <svg 
-                    className={`w-4 h-4 ${getAccentColorClass(course.accentColor)} transition-transform group-hover:translate-x-1`}
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-
-                {/* Large icon container - takes up bottom portion */}
-                <div className="w-full flex justify-end mt-auto mb-2">
-                  <div className="relative">
-                    {/* Glow effect */}
-                    <div className={`absolute inset-0 ${getAccentColorClass(course.accentColor)} opacity-20 blur-xl rounded-full scale-150`} />
-                    
-                    {/* Icon */}
-                    <div className="relative group-hover:bg-white/10">
-                      {course.label === "Videos" ? (
-                        <img
-                          src="/images/icons/video_icon.png"
-                          alt="Videos"
-                          className="w-16 h-16"
-                        />
-                      ) : course.label === "Posts" ? (
-                        <img
-                          src="/images/icons/learn_icon.png"
-                          alt="Posts"
-                          className="w-16 h-16"
-                        />
-                      ) : course.label === "Comments" ? (
-                        <img
-                          src="/images/icons/comment_icon.png"
-                          alt="Comments"
-                          className="w-16 h-16"
-                        />
-                      ) : course.label === "IdeaGen" ? (
-                        <img
-                          src="/images/icons/bulb.png"
-                          alt="IdeaGen"
-                          className="w-16 h-20"
-                        />
-                      ) : (
-                        <Icon className={`w-12 h-12 ${getAccentColorClass(course.accentColor)}`} />
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bottom gradient line */}
-                <div className={`absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r ${course.gradient} opacity-50`} />
-              </div>
-
-              {/* Bottom gradient line */}
-              <div className={`absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r ${course.gradient} opacity-50`} />
-            </button>
-          )
-        })}
-      </div>
+      {/* Course Action Buttons */}
+      <CourseActionButtons
+        onInitializingChange={handleInitializingChange}
+        onProgressChange={handleProgressChange}
+        onImportPreviewChange={setUrlImportPreview}
+      />
 
       {/* Projects Section - MINIMALIST CARDS */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium text-gray-400 dark:text-gray-500">Recent Projects</h2>
+          <h2 className="text-sm font-medium text-gray-400 dark:text-gray-500">Recent Projects</h2>
           <Link href="/project" className="text-sm text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium flex items-center gap-1">
             View All
             <ArrowRight className="w-4 h-4" />
@@ -679,6 +641,35 @@ function ChatRow({ chat, index }: { chat: RecentChatItem; index: number }) {
       </div>
 
       
+      {urlImportPreview && (
+        <div className="fixed bottom-6 right-6 z-40 w-[320px] rounded-xl border border-zinc-700/80 bg-zinc-900/95 backdrop-blur-md shadow-2xl shadow-black/60 overflow-hidden">
+          <div className="relative w-full aspect-video bg-zinc-800">
+            {urlImportPreview.thumbnailUrl ? (
+              <img
+                src={urlImportPreview.thumbnailUrl}
+                alt={urlImportPreview.heading}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Image className="w-8 h-8 text-zinc-500" />
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setUrlImportPreview(null)}
+              className="absolute top-2 right-2 rounded-full p-1 bg-black/60 text-zinc-200 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-zinc-400 mb-1">Importing from URL</p>
+            <p className="text-sm font-medium text-white line-clamp-2">{urlImportPreview.heading}</p>
+          </div>
+        </div>
+      )}
+
       {/* Create Project Modal */}
       <CreateProjectModal 
         isOpen={isModalOpen}

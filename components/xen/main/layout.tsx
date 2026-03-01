@@ -162,6 +162,19 @@ export default function Layout({ children }: LayoutProps) {
             } ${globalLoading || showSurvey ? "overflow-hidden" : "overflow-auto"}`}
           >
             {children}
+
+            {globalLoading && (
+              <div className="absolute inset-0 z-50">
+                <MultiStepLoader
+                  loadingStates={globalLoadingStates}
+                  loading={globalLoading}
+                  duration={1200}
+                  loop={true}
+                  value={globalStep}
+                  overlay="absolute"
+                />
+              </div>
+            )}
           </main>
 
           {showSurvey && !globalLoading && (
@@ -188,18 +201,6 @@ export default function Layout({ children }: LayoutProps) {
             </div>
           )}
 
-          {globalLoading && (
-            <div className="fixed inset-0 z-50">
-              <MultiStepLoader
-                loadingStates={globalLoadingStates}
-                loading={globalLoading}
-                duration={1200}
-                loop={true}
-                value={globalStep}
-                overlay="fixed"
-              />
-            </div>
-          )}
         </div>
       </GlobalLoaderContext.Provider>
     </SidebarContext.Provider>
